@@ -9,4 +9,8 @@ Slides: https://docs.google.com/presentation/d/1fqoHvb76n3efM5ZT3SmW6NNtjddM88fg
 
 Links:
 
+https://www.w3schools.com/html/ 
+https://www.w3schools.com/css/ 
 https://www.w3schools.com/js/ 
+
+https://huggingface.co/spaces/trellis-community/TRELLIS
