@@ -13,9 +13,14 @@
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer();
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
 
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
         renderer.xr.enabled = true;
         document.body.appendChild(renderer.domElement);
         document.body.appendChild(VRButton.createButton(renderer));
@@ -26,20 +31,43 @@
 
 
         // make bg white
-        // renderer.setClearColor(0xffffff, 1);
+        // sky blue
+         renderer.setClearColor(0x87ceeb, 1);
 
         // load sample.glb
         const loader = new GLTFLoader();
         loader.load('./room.glb', (gltf) => {
+            gltf.scene.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
             scene.add(gltf.scene);
             // scale
             gltf.scene.scale.set(5, 5, 5);
         });
 
 
-        // directional light
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 10);
-        directionalLight.position.set(0, 1, 1).normalize();
+        // soft sky/ground ambient fill
+        const hemiLight = new THREE.HemisphereLight(0xbdd7ff, 0x444433, 1.2);
+        scene.add(hemiLight);
+
+        // gentle overall fill so shadows aren't pure black
+        scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+        // key light (sun) with soft shadows
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2.5);
+        directionalLight.position.set(5, 10, 7);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.set(2048, 2048);
+        directionalLight.shadow.camera.near = 0.5;
+        directionalLight.shadow.camera.far = 50;
+        directionalLight.shadow.camera.left = -15;
+        directionalLight.shadow.camera.right = 15;
+        directionalLight.shadow.camera.top = 15;
+        directionalLight.shadow.camera.bottom = -15;
+        directionalLight.shadow.bias = -0.0005;
         scene.add(directionalLight);
 
         // setAnimationLoop is required for WebXR (requestAnimationFrame won't fire in an immersive session)
