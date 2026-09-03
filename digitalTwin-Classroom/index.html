@@ -5,6 +5,9 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Digital Twin</title>
     </head>
+    <script>
+     var room;
+    </script>
     <script type="module">
         import * as THREE from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/three.module.js';
         import { GLTFLoader } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/GLTFLoader.js';
@@ -43,6 +46,7 @@
         // load sample.glb
         const loader = new GLTFLoader();
         loader.load('./room.glb', (gltf) => {
+            room = gltf.scene;
             gltf.scene.traverse((child) => {
                 if (child.isMesh) {
                     child.castShadow = true;
