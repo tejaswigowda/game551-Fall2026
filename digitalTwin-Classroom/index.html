@@ -13,8 +13,9 @@
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // cap DPR to avoid over-rendering on hi-DPI screens
         renderer.xr.enabled = true; // Enable XR
         document.body.appendChild(renderer.domElement);
         document.body.appendChild(VRButton.createButton(renderer)); // Add VR button
@@ -42,12 +43,17 @@
         directionalLight.position.set(0, 1, 1).normalize();
         scene.add(directionalLight);
 
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
         function animate() {
-            requestAnimationFrame(animate);
             controls.update();
             renderer.render(scene, camera);
         }
-        renderer.setAnimationLoop(animate); // Use XR animation loop
+        renderer.setAnimationLoop(animate); // single XR-aware render loop
     </script>
     <body style="margin:0">
         <!-- WebXR VRButton will appear here -->
