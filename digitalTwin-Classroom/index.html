@@ -6,22 +6,23 @@
         <title>Digital Twin</title>
     </head>
     <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/three.module.js';
-    import { GLTFLoader } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/GLTFLoader.js';
-    import { OrbitControls } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/OrbitControls.js';
-    import { VRButton } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/VRButton.js';
+        import * as THREE from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/three.module.js';
+        import { GLTFLoader } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/GLTFLoader.js';
+        import { OrbitControls } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/OrbitControls.js';
+        import { VRButton } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/VRButton.js';
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+        const renderer = new THREE.WebGLRenderer();
+
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // cap DPR to avoid over-rendering on hi-DPI screens
-        renderer.xr.enabled = true; // Enable XR
+        renderer.xr.enabled = true;
         document.body.appendChild(renderer.domElement);
-        document.body.appendChild(VRButton.createButton(renderer)); // Add VR button
+        document.body.appendChild(VRButton.createButton(renderer));
 
         const controls = new OrbitControls(camera, renderer.domElement);
 
+        camera.position.z = 5;
 
 
         // make bg white
@@ -33,8 +34,6 @@
             scene.add(gltf.scene);
             // scale
             gltf.scene.scale.set(5, 5, 5);
-            // position
-            gltf.scene.position.set(0, 0, -5);
         });
 
 
@@ -43,19 +42,13 @@
         directionalLight.position.set(0, 1, 1).normalize();
         scene.add(directionalLight);
 
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        function animate() {
+        // setAnimationLoop is required for WebXR (requestAnimationFrame won't fire in an immersive session)
+        renderer.setAnimationLoop(function () {
             controls.update();
             renderer.render(scene, camera);
-        }
-        renderer.setAnimationLoop(animate); // single XR-aware render loop
+        });
     </script>
     <body style="margin:0">
-        <!-- WebXR VRButton will appear here -->
+       
     </body>
 </html>
