@@ -54,6 +54,10 @@
                 }
             });
             scene.add(gltf.scene);
+
+            // set wall color to red (Wall_0_grp is a group, so apply to its meshes)
+            const wall = room.getObjectByName('Wall_0_grp');
+            wall.children[0].material = new THREE.MeshStandardMaterial({ color: 0xff0000 });
             // scale
             gltf.scene.scale.set(5, 5, 5);
         });
@@ -81,7 +85,7 @@
         scene.add(directionalLight);
 
         // setAnimationLoop is required for WebXR (requestAnimationFrame won't fire in an immersive session)
-                    stats.begin();
+        stats.begin();
 
         renderer.setAnimationLoop(function () {
             controls.update();
