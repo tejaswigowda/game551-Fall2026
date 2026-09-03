@@ -10,6 +10,7 @@
         import { GLTFLoader } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/GLTFLoader.js';
         import { OrbitControls } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/OrbitControls.js';
         import { VRButton } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/VRButton.js';
+        import Stats from 'https://cdn.jsdelivr.net/npm/stats.js@0.17.0/src/Stats.js';
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -28,6 +29,11 @@
         const controls = new OrbitControls(camera, renderer.domElement);
 
         camera.position.z = 5;
+
+        // FPS meter
+        const stats = new Stats();
+        stats.showPanel(0);
+        document.body.appendChild(stats.dom);
 
 
         // make bg white
@@ -72,8 +78,10 @@
 
         // setAnimationLoop is required for WebXR (requestAnimationFrame won't fire in an immersive session)
         renderer.setAnimationLoop(function () {
+            stats.begin();
             controls.update();
             renderer.render(scene, camera);
+            stats.end();
         });
     </script>
     <body style="margin:0">
