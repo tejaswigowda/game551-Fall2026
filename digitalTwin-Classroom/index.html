@@ -77,8 +77,9 @@
         scene.add(directionalLight);
 
         // setAnimationLoop is required for WebXR (requestAnimationFrame won't fire in an immersive session)
+                    stats.begin();
+
         renderer.setAnimationLoop(function () {
-            stats.begin();
             controls.update();
             renderer.render(scene, camera);
             stats.end();
