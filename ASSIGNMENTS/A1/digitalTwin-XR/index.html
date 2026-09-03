@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Digital Twin</title>
+    </head>
+    <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/three.module.js';
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/GLTFLoader.js';
+    import { OrbitControls } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/OrbitControls.js';
+    import { VRButton } from 'https://cdn.jsdelivr.net/gh/mesquite-mocap/mesquite.cc/build-static/VRButton.js';
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.xr.enabled = true; // Enable XR
+        document.body.appendChild(renderer.domElement);
+        document.body.appendChild(VRButton.createButton(renderer)); // Add VR button
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+
+
+
+        // make bg white
+        // renderer.setClearColor(0xffffff, 1);
+
+        // load sample.glb
+        const loader = new GLTFLoader();
+        loader.load('./sample.glb', (gltf) => {
+            scene.add(gltf.scene);
+            // scale
+            gltf.scene.scale.set(5, 5, 5);
+            // position
+            gltf.scene.position.set(0, 0, -5);
+        });
+
+
+        // directional light
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 10);
+        directionalLight.position.set(0, 1, 1).normalize();
+        scene.add(directionalLight);
+
+        function animate() {
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        renderer.setAnimationLoop(animate); // Use XR animation loop
+    </script>
+    <body style="margin:0">
+        <!-- WebXR VRButton will appear here -->
+    </body>
+</html>
