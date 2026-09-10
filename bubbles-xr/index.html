@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bubble Popper XR</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #000;
+        }
+        canvas {
+            display: block;
+        }
+        #startButton {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 20px 40px;
+            font-size: 20px;
+            background: #af4cad;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            z-index: 100;
+        }
+        #startButton:hover {
+            background: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <button id="startButton">Enter Bubbles XR</button>
+    <button id="quitButton" style="display:none; position: absolute; top: 50px; right: 10px; padding: 10px 20px; background: #ff6b6b; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 24px;">Quit</button>
+    <div id="scoreDisplay" style="display:none; position: absolute; top: 50px; left: 10px; color: white; background: rgba(0, 0, 0, 0.7); padding: 10px 15px; border-radius: 5px; font-size: 28px; font-weight: bold;">Score: 0</div>
+    <button id="mapToggle" style="display:none; position: absolute; bottom: 20px; right: 20px; padding: 10px 15px; background: rgba(0, 0, 0, 0.7); color: white; border: 2px solid white; border-radius: 5px; cursor: pointer; font-size: 16px;">Map</button>
+    <div id="minimapContainer" style="display:none; position: absolute; bottom: 20px; left: 20px; background: rgba(0, 0, 0, 0.8); border: 3px solid white; border-radius: 10px; padding: 10px;">
+        <canvas id="minimap" width="200" height="200"></canvas>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+        import { VRButton } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/VRButton.js';
+
+        let camera, scene, renderer;
+        let bubbles = [];
+        let controller1, controller2;
+        let raycaster = new THREE.Raycaster();
+        let highlightedBubble = null;
+        let gazeStartTime = null;
+        let gazeTarget = null;
+        let reticle = null;
+        let audioContext = null;
+        let score = 0;
+        let ambientLight = null;
+        let minimapCanvas = null;
+        let minimapCtx = null;
+        let minimapVisible = false;
+        let arrowAnimations = [];
+
+        const startButton = document.getElementById('startButton');
+        const quitButton = document.getElementById('quitButton');
+        const mapToggle = document.getElementById('mapToggle');
+        const minimapContainer = document.getElementById('minimapContainer');
+        
+        init();
+        
+        function init() {
+            // Initialize audio context (must be after user interaction)
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // Scene setup
+            scene = new THREE.Scene();
+
+            // Camera setup
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 1.6, 0);
+
+            // Renderer setup with mobile optimization
+            renderer = new THREE.WebGLRenderer({ 
+                antialias: false, // Disable for better mobile performance
+                alpha: true,
+                powerPreference: 'high-performance'
+            });
+            // Limit pixel ratio for better mobile performance
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            renderer.xr.setFramebufferScaleFactor(0.8); // Reduce resolution slightly for performance
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 2, 1);
+            scene.add(directionalLight);
+
+            // Controllers setup
+            controller1 = renderer.xr.getController(0);
+            controller1.addEventListener('select', onSelect);
+            scene.add(controller1);
+
+            controller2 = renderer.xr.getController(1);
+            controller2.addEventListener('select', onSelect);
+            scene.add(controller2);
+
+            // Add controller ray visualizers
+            const geometry = new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(0, 0, 0),
+                new THREE.Vector3(0, 0, -1)
+            ]);
+            const material = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 2 });
+            
+            const line1 = new THREE.Line(geometry, material);
+            controller1.add(line1);
+            
+            const line2 = new THREE.Line(geometry, material);
+            controller2.add(line2);
+
+            // Create center reticle for AR gaze selection
+            const reticleGeometry = new THREE.RingGeometry(0.015, 0.02, 32);
+            const reticleMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xff00ff, 
+                transparent: true, 
+                opacity: 0.5,
+                side: THREE.DoubleSide 
+            });
+            reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+            reticle.visible = false;
+            camera.add(reticle);
+            reticle.position.set(0, 0, -1.2); // 1.2 meters in front of camera
+            scene.add(camera);
+            // Setup minimap
+            minimapCanvas = document.getElementById('minimap');
+            minimapCtx = minimapCanvas.getContext('2d');
+            
+            // Map toggle handler
+            mapToggle.addEventListener('click', () => {
+                minimapVisible = !minimapVisible;
+                minimapContainer.style.display = minimapVisible ? 'block' : 'none';
+                mapToggle.style.background = minimapVisible ? 'rgba(100, 200, 100, 0.8)' : 'rgba(0, 0, 0, 0.7)';
+            });
+            // Start button handler
+            startButton.addEventListener('click', async () => {
+                startButton.style.display = 'none';
+                quitButton.style.display = 'block';
+                document.getElementById('scoreDisplay').style.display = 'block';
+                mapToggle.style.display = 'block';
+                
+                // Check if WebXR is supported
+                if ('xr' in navigator) {
+                    try {
+                        const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                        if (supported) {
+                            // Request AR session with lighting estimation
+                            const sessionInit = {
+                                optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers', 'dom-overlay', 'light-estimation'],
+                                domOverlay: { root: document.body }
+                            };
+                            
+                            const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
+                            
+                            // Set up reference space
+                            session.addEventListener('end', () => {
+                                console.log('AR session ended');
+                                quitButton.style.display = 'none';
+                                startButton.style.display = 'block';
+                            });
+                            
+                            await renderer.xr.setSession(session);
+                            
+                            console.log('AR session started successfully');
+                            // Fewer bubbles for mobile AR performance
+                            createBubbles(12);
+                        } else {
+                            alert('AR not supported on this device. Starting regular 3D mode.');
+                            startRegularMode();
+                            createBubbles(20);
+                        }
+                    } catch (e) {
+                        console.error('XR error:', e);
+                        alert('AR session error: ' + e.message + '. Starting regular 3D mode.');
+                        startRegularMode();
+                        createBubbles(20);
+                    }
+                } else {
+                    alert('WebXR not available. Starting regular 3D mode.');
+                    startRegularMode();
+                    createBubbles(20);
+                }
+                animate();
+            });
+            
+            // Quit button handler
+            quitButton.addEventListener('click', async () => {
+                window.location.reload();
+            });
+
+            // Mouse click for non-XR mode
+            window.addEventListener('click', (event) => {
+                if (!renderer.xr.isPresenting && highlightedBubble) {
+                    popBubble(highlightedBubble);
+                }
+            });
+
+            // Mouse move for non-XR mode
+            window.addEventListener('mousemove', (event) => {
+                if (!renderer.xr.isPresenting) {
+                    const mouse = new THREE.Vector2(
+                        (event.clientX / window.innerWidth) * 2 - 1,
+                        -(event.clientY / window.innerHeight) * 2 + 1
+                    );
+                    raycaster.setFromCamera(mouse, camera);
+                    checkBubbleIntersection(raycaster);
+                }
+            });
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function startRegularMode() {
+            // Add some basic camera movement for non-AR mode
+            document.addEventListener('mousemove', (e) => {
+                if (!renderer.xr.isPresenting) {
+                    camera.rotation.y = (e.clientX / window.innerWidth - 0.5) * Math.PI * 0.5;
+                    camera.rotation.x = (e.clientY / window.innerHeight - 0.5) * Math.PI * 0.3;
+                }
+            });
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('score').textContent = `Score: ${score}`;
+            document.getElementById('highScore').textContent = `High Score: ${highScore}`;
+        }
+        
+        function resetGame() {
+            score = 0;
+            updateScoreDisplay();
+            gameActive = true;
+            startButton.style.display = 'none';
+            quitButton.style.display = 'block';
+        }
+        
+        function endGame() {
+            gameActive = false;
+            exitButton.style.display = 'none';
+            startButton.style.display = 'block';
+            
+            // Clear bubbles
+            bubbles.forEach(bubble => {
+                scene.remove(bubble);
+                bubble.geometry.dispose();
+                bubble.material.dispose();
+            });
+            bubbles = [];
+            updateBubbleCount();
+        }
+        
+        function createBubbles(count) {
+            for (let i = 0; i < count; i++) {
+                createBubble();
+            }
+            updateBubbleCount();
+        }
+
+        function playPopSound() {
+            if (!audioContext) return;
+            
+            // Create a pop sound using Web Audio API
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            
+            // Pop sound: quick frequency sweep from high to low
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(100, audioContext.currentTime + 0.1);
+            
+            // Quick fade out
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            
+            oscillator.type = 'sine';
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+
+        function triggerVibration() {
+            // Vibrate for 50ms if supported
+            if ('vibrate' in navigator) {
+                navigator.vibrate(50);
+            }
+        }
+
+        function createBubble() {
+            // Create bubble geometry with lower poly count for performance
+            const radius = 0.15 + Math.random() * 0.20;
+            const geometry = new THREE.SphereGeometry(radius, 16, 16);
+            
+            // Custom shader for photorealistic translucent bubble with environment reflection
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 },
+                    color1: { value: new THREE.Color(0x88ccff) },
+                    color2: { value: new THREE.Color(0xffccff) },
+                    color3: { value: new THREE.Color(0xffffcc) },
+                    opacity: { value: 0.15 }
+                },
+                vertexShader: `
+                    varying vec3 vNormal;
+                    varying vec3 vViewPosition;
+                    varying vec3 vWorldPosition;
+                    varying vec3 vWorldNormal;
+                    uniform float time;
+                    
+                    void main() {
+                        // Calculate wave displacement for fluid surface effect
+                        vec3 displaced = position;
+                        float wave1 = sin(position.x * 5.0 + time * 0.5) * 0.02;
+                        float wave2 = cos(position.y * 5.0 + time * 0.3) * 0.02;
+                        displaced += normalize(position) * (wave1 + wave2);
+                        
+                        vNormal = normalize(normalMatrix * normal);
+                        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+                        vWorldPosition = (modelMatrix * vec4(displaced, 1.0)).xyz;
+                        
+                        vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
+                        vViewPosition = -mvPosition.xyz;
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform vec3 color1;
+                    uniform vec3 color2;
+                    uniform vec3 color3;
+                    uniform float opacity;
+                    uniform float time;
+                    varying vec3 vNormal;
+                    varying vec3 vViewPosition;
+                    varying vec3 vWorldPosition;
+                    varying vec3 vWorldNormal;
+                    
+                    // Simple environment reflection
+                    vec3 getEnvironmentReflection(vec3 normal, vec3 viewDir) {
+                        vec3 reflected = reflect(viewDir, normal);
+                        // Simulate sky color based on reflection direction
+                        return mix(
+                            vec3(0.5, 0.7, 1.0),  // sky blue
+                            vec3(1.0, 0.8, 0.6),  // horizon/sun
+                            max(0.0, reflected.y) * 0.5 + 0.5
+                        );
+                    }
+                    
+                    // Caustic pattern for fluid effect
+                    float caustic(vec3 pos, float t) {
+                        float pattern = sin(pos.x * 3.0 + t * 0.3) * cos(pos.z * 3.0 - t * 0.2);
+                        pattern += sin(pos.y * 3.0 + t * 0.4) * 0.5;
+                        return fract(pattern);
+                    }
+                    
+                    void main() {
+                        vec3 viewDir = normalize(vViewPosition);
+                        vec3 normal = normalize(vNormal);
+                        
+                        // Advanced fresnel with smooth gradient
+                        float cosAngle = abs(dot(viewDir, normal));
+                        float fresnel = pow(1.0 - cosAngle, 3.0);
+                        fresnel = mix(0.1, 1.0, fresnel);
+                        
+                        // Iridescent color based on normal with more depth
+                        float mixFactor1 = normal.y * 0.5 + 0.5;
+                        float mixFactor2 = normal.x * 0.5 + 0.5;
+                        vec3 baseColor = mix(color1, color2, mixFactor1);
+                        baseColor = mix(baseColor, color3, mixFactor2);
+                        
+                        // Dynamic caustic shimmer for fluid motion
+                        float causticEffect = caustic(vWorldPosition, time) * 0.3;
+                        float shimmer = sin(normal.x * 15.0 + time * 0.5) * 0.15 + 0.85;
+                        shimmer += causticEffect;
+                        
+                        // Environment reflection
+                        vec3 envReflection = getEnvironmentReflection(normal, viewDir);
+                        
+                        // Combine base color with reflected environment
+                        vec3 finalColor = mix(baseColor * shimmer, envReflection, fresnel * 0.4);
+                        
+                        // Opacity with fresnel at edges
+                        float finalOpacity = opacity + fresnel * 0.4;
+                        
+                        gl_FragColor = vec4(finalColor, finalOpacity);
+                    }
+                `,
+                transparent: true,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const bubble = new THREE.Mesh(geometry, material);
+            bubble.userData.material = material; // Store for animation
+            
+            // Position bubbles in a volume around the user
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 1 + Math.random() * 2;
+            const height = -1.5 + Math.random() * 3.0; // Ground level (-1.5m) to 1.5m above eye level
+            
+            bubble.position.x = Math.cos(angle) * distance;
+            bubble.position.y = height;
+            bubble.position.z = Math.sin(angle) * distance;
+            
+            // Add random velocity for slower, more graceful floating effect
+            bubble.userData.velocity = new THREE.Vector3(
+                (Math.random() - 0.5) * 0.0018,
+                0.0012 + Math.random() * 0.0018,
+                (Math.random() - 0.5) * 0.0018
+            );
+            
+            bubble.userData.originalColor = 0xffffff;
+            bubble.userData.highlighted = false;
+            
+            scene.add(bubble);
+            bubbles.push(bubble);
+        }
+
+        function checkBubbleIntersection(raycaster) {
+            const intersects = raycaster.intersectObjects(bubbles);
+            
+            // Reset previously highlighted bubble
+            if (highlightedBubble && !intersects.find(i => i.object === highlightedBubble)) {
+                highlightedBubble.material.uniforms.color1.value.setHex(0x88ccff);
+                highlightedBubble.material.uniforms.color2.value.setHex(0xffccff);
+                highlightedBubble.userData.highlighted = false;
+                highlightedBubble.scale.set(1, 1, 1);
+                highlightedBubble = null;
+            }
+            
+            // Highlight new bubble
+            if (intersects.length > 0) {
+                const bubble = intersects[0].object;
+                if (!bubble.userData.highlighted) {
+                    bubble.material.uniforms.color1.value.setHex(0xff0088);
+                    bubble.material.uniforms.color2.value.setHex(0x00ff88);
+                    bubble.userData.highlighted = true;
+                    bubble.scale.set(1.2, 1.2, 1.2);
+                    highlightedBubble = bubble;
+                }
+            }
+        }
+
+        function onSelect(event) {
+            const controller = event.target;
+            
+            // Create raycaster from controller
+            const tempMatrix = new THREE.Matrix4();
+            tempMatrix.identity().extractRotation(controller.matrixWorld);
+            
+            raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+            raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
+            
+            const intersects = raycaster.intersectObjects(bubbles);
+            
+            if (intersects.length > 0) {
+                popBubble(intersects[0].object);
+            }
+        }
+
+        function popBubble(bubble) {
+            const index = bubbles.indexOf(bubble);
+            if (index > -1) {
+                // Trigger arrow animation on minimap
+                if (minimapVisible) {
+                    const relX = bubble.position.x - camera.position.x;
+                    const relZ = bubble.position.z - camera.position.z;
+                    const distance = Math.sqrt(relX * relX + relZ * relZ);
+                    arrowAnimations.push({
+                        startTime: Date.now(),
+                        duration: 400,
+                        targetX: relX,
+                        targetZ: relZ,
+                        distance: distance
+                    });
+                }
+                
+                // Increment score
+                score += 10;
+                document.getElementById('scoreDisplay').textContent = `Score: ${score}`;
+                
+                // Play pop sound and vibrate
+                playPopSound();
+                triggerVibration();
+                
+                // Create realistic water droplet burst effect
+                const dropletCount = 50;
+                const droplets = [];
+                const bubblePos = bubble.position.clone();
+                const bubbleColor = new THREE.Color(
+                    bubble.material.uniforms.color1.value.r,
+                    bubble.material.uniforms.color1.value.g,
+                    bubble.material.uniforms.color1.value.b
+                );
+                
+                // Create different sized droplets for realism
+                for (let i = 0; i < dropletCount; i++) {
+                    const dropletSize = 0.003 + Math.random() * 0.008; // Smaller, varied droplets
+                    const dropletGeometry = new THREE.SphereGeometry(dropletSize, 8, 8);
+                    
+                    // Droplet material with light reflection
+                    const dropletMaterial = new THREE.MeshStandardMaterial({
+                        color: bubbleColor,
+                        metalness: 0.3,
+                        roughness: 0.1,
+                        transparent: true,
+                        opacity: 0.9
+                    });
+                    const droplet = new THREE.Mesh(dropletGeometry, dropletMaterial);
+                    
+                    droplet.position.copy(bubblePos);
+                    
+                    // Physics-based explosion with varied trajectories
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI;
+                    const speed = 0.015 + Math.random() * 0.05; // Vary speed for natural splash
+                    
+                    droplet.userData.velocity = new THREE.Vector3(
+                        Math.sin(phi) * Math.cos(theta) * speed,
+                        Math.sin(phi) * Math.sin(theta) * speed + 0.01, // Upward bias
+                        Math.cos(phi) * speed
+                    );
+                    
+                    droplet.userData.gravity = 0.0015; // Strong gravity for droplets
+                    droplet.userData.dragCoefficient = 0.98; // Air resistance
+                    
+                    scene.add(droplet);
+                    droplets.push(droplet);
+                }
+                
+                // Create expanding mist ring for water splash effect
+                const mistGeometry = new THREE.RingGeometry(0.05, 0.15, 32);
+                const mistMaterial = new THREE.MeshBasicMaterial({
+                    color: bubbleColor,
+                    transparent: true,
+                    opacity: 0.4,
+                    side: THREE.DoubleSide
+                });
+                const mist = new THREE.Mesh(mistGeometry, mistMaterial);
+                mist.position.copy(bubblePos);
+                mist.lookAt(camera.position);
+                scene.add(mist);
+                
+                // Create secondary wave ring for impact
+                const waveGeometry = new THREE.RingGeometry(0.08, 0.12, 32);
+                const waveMaterial = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color(1, 1, 1),
+                    transparent: true,
+                    opacity: 0.6,
+                    side: THREE.DoubleSide
+                });
+                const wave = new THREE.Mesh(waveGeometry, waveMaterial);
+                wave.position.copy(bubblePos);
+                wave.lookAt(camera.position);
+                scene.add(wave);
+                
+                // Pop animation with realistic water spray
+                const popDuration = 600;
+                const startTime = Date.now();
+                
+                const animatePop = () => {
+                    const elapsed = Date.now() - startTime;
+                    const progress = elapsed / popDuration;
+                    
+                    if (progress < 1) {
+                        // Bubble expansion and fade
+                        const scale = 1 + progress * 1.5;
+                        bubble.scale.set(scale, scale, scale);
+                        bubble.material.uniforms.opacity.value = 0.15 * (1 - progress * progress);
+                        
+                        // Animate droplets with physics
+                        droplets.forEach(droplet => {
+                            // Apply gravity
+                            droplet.userData.velocity.y -= droplet.userData.gravity;
+                            
+                            // Apply air resistance
+                            droplet.userData.velocity.multiplyScalar(droplet.userData.dragCoefficient);
+                            
+                            // Update position
+                            droplet.position.add(droplet.userData.velocity);
+                            
+                            // Fade droplets smoothly
+                            const dropletFadeStart = 0.3;
+                            if (progress > dropletFadeStart) {
+                                const fadeProgress = (progress - dropletFadeStart) / (1 - dropletFadeStart);
+                                droplet.material.opacity = 0.9 * (1 - fadeProgress * fadeProgress);
+                            }
+                        });
+                        
+                        // Animate mist expansion
+                        const mistScale = 1 + progress * 3;
+                        mist.scale.set(mistScale, mistScale, 1);
+                        mist.material.opacity = 0.4 * (1 - progress * progress);
+                        
+                        // Animate wave impact
+                        const waveScale = 1 + progress * 2.5;
+                        wave.scale.set(waveScale, waveScale, 1);
+                        wave.material.opacity = 0.6 * Math.max(0, 1 - progress * 2); // Quick fade
+                        
+
+                        requestAnimationFrame(animatePop);
+                    } else {
+                        // Clean up bubble
+                        scene.remove(bubble);
+                        bubble.geometry.dispose();
+                        bubble.material.dispose();
+                        bubbles.splice(index, 1);
+                        
+                        // Clean up droplets
+                        droplets.forEach(droplet => {
+                            scene.remove(droplet);
+                            droplet.geometry.dispose();
+                            droplet.material.dispose();
+                        });
+                        
+                        // Clean up mist
+                        scene.remove(mist);
+                        mist.geometry.dispose();
+                        mist.material.dispose();
+                        
+                        // Clean up wave
+                        scene.remove(wave);
+                        wave.geometry.dispose();
+                        wave.material.dispose();
+                        
+
+                        if (highlightedBubble === bubble) {
+                            highlightedBubble = null;
+                        }
+                        
+                        updateBubbleCount();
+                        
+                        // Create new bubble to replace it
+                        createBubble();
+                    }
+                };
+                
+                animatePop();
+            }
+        }
+
+        function updateBubbleCount() {
+        }
+
+        function drawMinimap() {
+            if (!minimapVisible || !minimapCtx) return;
+            
+            const ctx = minimapCtx;
+            const width = minimapCanvas.width;
+            const height = minimapCanvas.height;
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const scale = 30; // pixels per meter
+            
+            // Clear canvas
+            ctx.fillStyle = 'rgba(20, 20, 40, 0.9)';
+            ctx.fillRect(0, 0, width, height);
+            
+            // Draw range circles
+            ctx.strokeStyle = 'rgba(100, 100, 150, 0.3)';
+            ctx.lineWidth = 1;
+            for (let i = 1; i <= 3; i++) {
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, i * scale, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            
+            // Draw bubbles
+            bubbles.forEach(bubble => {
+                const relX = bubble.position.x - camera.position.x;
+                const relZ = bubble.position.z - camera.position.z;
+                
+                const mapX = centerX + relX * scale;
+                const mapY = centerY + relZ * scale;
+                
+                // Only draw if in range
+                if (Math.abs(mapX - centerX) < width/2 && Math.abs(mapY - centerY) < height/2) {
+                    ctx.fillStyle = bubble.userData.highlighted ? 'rgba(255, 100, 255, 0.8)' : 'rgba(100, 200, 255, 0.6)';
+                    ctx.beginPath();
+                    ctx.arc(mapX, mapY, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    if (bubble.userData.highlighted) {
+                        ctx.strokeStyle = 'rgba(255, 150, 255, 0.8)';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                }
+            });
+            
+            // Draw camera (player) as bow and arrow with heading
+            // Calculate heading from camera's forward direction vector
+            const cameraDirection = new THREE.Vector3();
+            camera.getWorldDirection(cameraDirection);
+            const cameraRotation = Math.atan2(cameraDirection.x, cameraDirection.z) - Math.PI / 2;
+            
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(-cameraRotation);
+            
+            // Draw bow limbs (string bow style)
+            ctx.strokeStyle = 'rgba(139, 69, 19, 1)'; // Brown bow
+            ctx.lineWidth = 1.5;
+            ctx.lineCap = 'round';
+            
+            // Upper limb
+            ctx.beginPath();
+            ctx.moveTo(-6.5, -7.5);
+            ctx.quadraticCurveTo(-3.5, -6.5, 0, -3.5);
+            ctx.stroke();
+            
+            // Lower limb
+            ctx.beginPath();
+            ctx.moveTo(-6.5, 7.5);
+            ctx.quadraticCurveTo(-3.5, 6.5, 0, 3.5);
+            ctx.stroke();
+            
+            // Draw grip/handle
+            ctx.fillStyle = 'rgba(101, 67, 33, 1)';
+            ctx.fillRect(-1, -2.5, 1, 5);
+            
+            // Draw bowstring (drawn back with tension curve)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(-6.5, -7.5);
+            ctx.quadraticCurveTo(-5, 0, -6.5, 7.5); // String curves back
+            ctx.stroke();
+            
+            // Draw arrow nocked on bow (pointing forward) - sharper tip
+            ctx.strokeStyle = 'rgba(200, 150, 100, 1)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(-6.5, 0);
+            ctx.lineTo(10, 0);
+            ctx.stroke();
+            
+            // Draw arrow tip (sharper and longer)
+            ctx.fillStyle = 'rgba(150, 150, 150, 1)';
+            ctx.strokeStyle = 'rgba(100, 100, 100, 1)';
+            ctx.lineWidth = 1.25;
+            ctx.beginPath();
+            ctx.moveTo(12.5, 0); // Sharp point
+            ctx.lineTo(7.5, -3);
+            ctx.lineTo(8.5, 0);
+            ctx.lineTo(7.5, 3);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            // Draw fletching (bigger)
+            ctx.fillStyle = 'rgba(255, 100, 100, 0.8)';
+            ctx.beginPath();
+            ctx.moveTo(-6.5, 0);
+            ctx.lineTo(-9, -2.5);
+            ctx.lineTo(-8.5, 0);
+            ctx.lineTo(-9, 2.5);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.restore();
+            
+            // Draw flying arrows animation
+            const currentTime = Date.now();
+            arrowAnimations = arrowAnimations.filter(anim => {
+                const elapsed = currentTime - anim.startTime;
+                const progress = Math.min(elapsed / anim.duration, 1);
+                
+                if (progress < 1) {
+                    // Calculate arrow position
+                    const arrowX = centerX + anim.targetX * scale * progress;
+                    const arrowY = centerY + anim.targetZ * scale * progress;
+                    
+                    // Calculate arrow angle (adjust for 90 degree offset like bow)
+                    const angle = Math.atan2(anim.targetX, anim.targetZ) - Math.PI / 2;
+                    
+                    ctx.save();
+                    ctx.translate(arrowX, arrowY);
+                    ctx.rotate(-angle);
+                    
+                    // Draw flying arrow (scaled down)
+                    const opacity = 1 - progress * 0.3;
+                    ctx.strokeStyle = `rgba(200, 150, 100, ${opacity})`;
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    ctx.moveTo(-8.5, 0);
+                    ctx.lineTo(10, 0);
+                    ctx.stroke();
+                    
+                    // Arrow tip (sharper)
+                    ctx.fillStyle = `rgba(150, 150, 150, ${opacity})`;
+                    ctx.strokeStyle = `rgba(100, 100, 100, ${opacity})`;
+                    ctx.lineWidth = 1.25;
+                    ctx.beginPath();
+                    ctx.moveTo(12.5, 0); // Sharp point
+                    ctx.lineTo(7.5, -2.5);
+                    ctx.lineTo(8.5, 0);
+                    ctx.lineTo(7.5, 2.5);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    ctx.restore();
+                    
+                    return true; // Keep animation
+                }
+                return false; // Remove completed animation
+            });
+            
+            // Draw center dot
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render() {
+            // Frustum culling - only process visible bubbles
+            camera.updateMatrixWorld();
+            const frustum = new THREE.Frustum();
+            const projScreenMatrix = new THREE.Matrix4();
+            projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            frustum.setFromProjectionMatrix(projScreenMatrix);
+            
+            // Animate bubbles
+            bubbles.forEach(bubble => {
+                // Only update bubbles in view for better performance
+                bubble.visible = frustum.intersectsObject(bubble);
+                
+                // Update shader time uniform for animation
+                if (bubble.material.uniforms) {
+                    bubble.material.uniforms.time.value = performance.now() * 0.001;
+                }
+                
+                // Float animation
+                bubble.position.add(bubble.userData.velocity);
+                
+                // Boundary checking and bounce
+                if (bubble.position.y > 3.5) {
+                    bubble.position.y = 3.5;
+                    bubble.userData.velocity.y *= -0.5;
+                }
+                if (bubble.position.y < 0.5) {
+                    bubble.position.y = 0.5;
+                    bubble.userData.velocity.y *= -0.5;
+                }
+                
+                // Keep bubbles in view range
+                const distanceFromCenter = Math.sqrt(
+                    bubble.position.x ** 2 + bubble.position.z ** 2
+                );
+                if (distanceFromCenter > 3.5) {
+                    bubble.userData.velocity.x *= -1;
+                    bubble.userData.velocity.z *= -1;
+                }
+                
+                // Subtle gentle rotation with more natural wobble
+                bubble.rotation.x += bubble.userData.velocity.y * 0.05 + Math.sin(performance.now() * 0.0005 + bubble.position.x) * 0.0002;
+                bubble.rotation.y += bubble.userData.velocity.x * 0.05 + Math.cos(performance.now() * 0.0003 + bubble.position.z) * 0.0003;
+                bubble.rotation.z += Math.sin(performance.now() * 0.0004 + bubble.position.y) * 0.0001;
+            });
+            
+            // Check controller pointing in XR mode OR center-screen gaze in AR
+            if (renderer.xr.isPresenting) {
+                // Update lighting from XR environment if available
+                const session = renderer.xr.getSession();
+                if (session && session.requestLightProbe) {
+                    session.requestLightProbe().then(lightProbe => {
+                        if (lightProbe && lightProbe.estimationLight) {
+                            const lightData = lightProbe.estimationLight;
+                            if (lightData.primaryLightIntensity) {
+                                ambientLight.intensity = Math.min(lightData.primaryLightIntensity.length() / 2, 1);
+                            }
+                        }
+                    }).catch(() => {
+                        // Lighting estimation not available, use defaults
+                    });
+                }
+                
+                // Show reticle in AR mode
+                if (reticle) {
+                    reticle.visible = true;
+                }
+                
+                // Use center-screen raycasting for AR gaze selection
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                const intersects = raycaster.intersectObjects(bubbles);
+                
+                if (intersects.length > 0) {
+                    const targetBubble = intersects[0].object;
+                    
+                    // If looking at a new bubble, start timer
+                    if (gazeTarget !== targetBubble) {
+                        // Reset previous bubble
+                        if (highlightedBubble && highlightedBubble !== targetBubble) {
+                            highlightedBubble.material.uniforms.color1.value.setHex(0x88ccff);
+                            highlightedBubble.material.uniforms.color2.value.setHex(0xffccff);
+                            highlightedBubble.userData.highlighted = false;
+                            highlightedBubble.scale.set(1, 1, 1);
+                        }
+                        
+                        gazeTarget = targetBubble;
+                        gazeStartTime = Date.now();
+                        highlightedBubble = targetBubble;
+                        
+                        // Highlight the bubble
+                        targetBubble.material.uniforms.color1.value.setHex(0xff0088);
+                        targetBubble.material.uniforms.color2.value.setHex(0x00ff88);
+                        targetBubble.userData.highlighted = true;
+                        targetBubble.scale.set(1.2, 1.2, 1.2);
+                    } else {
+                        // Check if 1 seconds have passed
+                        const gazeDuration = Date.now() - gazeStartTime;
+                        const progress = Math.min(gazeDuration / 1000, 1);
+                        
+                        // Update reticle to show progress
+                        if (reticle) {
+                            reticle.material.color.setHSL(0.3 - progress * 0.3, 1, 0.5);
+                            reticle.material.opacity = 0.5 + progress * 0.5;
+                            reticle.scale.set(1 + progress * 0.5, 1 + progress * 0.5, 1);
+                        }
+                        
+                        // Pop bubble after 1 seconds
+                        if (gazeDuration >= 1000) {
+                            popBubble(targetBubble);
+                            gazeTarget = null;
+                            gazeStartTime = null;
+                            if (reticle) {
+                                reticle.material.color.setHex(0xffffff);
+                                reticle.material.opacity = 0.5;
+                                reticle.scale.set(1, 1, 1);
+                            }
+                        }
+                    }
+                } else {
+                    // Not looking at any bubble, reset
+                    if (highlightedBubble) {
+                        highlightedBubble.material.uniforms.color1.value.setHex(0x88ccff);
+                        highlightedBubble.material.uniforms.color2.value.setHex(0xffccff);
+                        highlightedBubble.userData.highlighted = false;
+                        highlightedBubble.scale.set(1, 1, 1);
+                        highlightedBubble = null;
+                    }
+                    gazeTarget = null;
+                    gazeStartTime = null;
+                    if (reticle) {
+                        reticle.material.color.setHex(0xffffff);
+                        reticle.material.opacity = 0.5;
+                        reticle.scale.set(1, 1, 1);
+                    }
+                }
+            } else {
+                // Hide reticle in non-XR mode
+                if (reticle) {
+                    reticle.visible = false;
+                }
+            }
+            
+            renderer.render(scene, camera);
+            
+            // Update minimap
+            drawMinimap();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
