@@ -434,9 +434,14 @@
     shotButtons.forEach(button=>{button.disabled=true;});
     el.state.textContent='Unavailable';
   }
+  function supportsWebGL2(){
+    try{return !!(window.WebGL2RenderingContext && document.createElement('canvas').getContext('webgl2'));}
+    catch{return false;}
+  }
   try{
     if(typeof THREE==='undefined')throw new Error('The Three.js file could not load. Extract the complete ZIP before opening index.html, or use the standalone last-stop.html file.');
     if(!STORY)throw new Error('The story file could not load. Keep story.js with index.html, or use the standalone last-stop.html file.');
+    if(!supportsWebGL2())throw new Error('webgl2 unsupported');
     makeWorld();elapsed=0;resize();renderer.setAnimationLoop(loop);
     el.loading.hidden=true;el.play.disabled=false;el.restart.disabled=false;el.seek.disabled=false;el.sound.disabled=false;setStatus();
     el.play.addEventListener('click',play);el.pause.addEventListener('click',pause);el.restart.addEventListener('click',restart);
@@ -461,6 +466,12 @@
     document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing)pause();});
     window.addEventListener('resize',resize);
     el.film.addEventListener('webglcontextlost',e=>{e.preventDefault();fail('The graphics connection was interrupted. Reload this page to restore the film.');});
-  }catch(error){console.error(error);fail(error.message.includes('file could not load')?error.message:'This film needs WebGL 2 graphics. Try a current Chrome, Edge, Firefox or Safari browser with graphics acceleration enabled.');}
+  }catch(error){
+    console.error(error);
+    const webglIssue=error.message==='webgl2 unsupported'||/webgl/i.test(error.message||'');
+    fail(error.message.includes('file could not load')?error.message:webglIssue
+      ?"This film needs WebGL 2 graphics, which this browser can't provide. On Android, open the page directly in Chrome (not an in-app browser like Instagram or Facebook), and make sure Chrome and Android System WebView are updated from the Play Store. On desktop, try a current Chrome, Edge, Firefox or Safari with graphics acceleration enabled."
+      :'Something went wrong while building the scene. Reloading the page may help.');
+  }
 })();
 
