@@ -7,7 +7,7 @@
   <meta name="description" content="Last Stop: a complete 45-second animated short in six shots. A lonely robot, a desert bus stop, and a little hope.">
   <title>Last Stop — An animated short</title>
   <script>
-	  let renderer, scene, camera, elapsed = 0, playing = false, lastTick = 0, animationId = 0;
+	  let renderer, scene, camera, elapsed = 0, playing = false, lastTick = 0;
   let robot, head, chestLight, lamp, glow, dust, dustOrigins, torso, ticket, limbs, bus, busDoors, busWheels, roadDust, roadDustOrigins;
   </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2311191c'/%3E%3Crect x='12' y='19' width='40' height='29' rx='8' fill='%23d8cdb7'/%3E%3Crect x='17' y='27' width='30' height='13' rx='4' fill='%23252f32'/%3E%3Ccircle cx='25' cy='33' r='3' fill='%23efb56f'/%3E%3Ccircle cx='39' cy='33' r='3' fill='%23efb56f'/%3E%3Cpath d='M32 19V10' stroke='%23d8cdb7' stroke-width='3'/%3E%3C/svg%3E">
@@ -39,6 +39,7 @@
           <button id="pause" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3h3v10H4zm5 0h3v10H9z" fill="currentColor"/></svg>Pause</button>
           <button id="restart" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 6a5 5 0 1 1-.1 4M3 2v4h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>Restart</button>
           <button id="fullscreen" aria-pressed="false" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 5.5v-3a1 1 0 0 1 1-1h3M14.5 5.5v-3a1 1 0 0 0-1-1h-3M1.5 10.5v3a1 1 0 0 0 1 1h3M14.5 10.5v3a1 1 0 0 1-1 1h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Fullscreen</span></button>
+          <button id="vr" aria-pressed="false" disabled><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1" y="4.5" width="14" height="7" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.2" cy="8" r="1.35" fill="currentColor"/><circle cx="10.8" cy="8" r="1.35" fill="currentColor"/></svg><span>Enter VR</span></button>
         </div>
         <div class="sound-control"><input id="sound" type="checkbox" disabled><label for="sound">Soundtrack</label></div>
         <span id="state" class="state" role="status" aria-live="polite">Loading</span>

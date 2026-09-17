@@ -9,8 +9,8 @@
   const DURATION = STORY?STORY.duration:45;
   const FPS = 24;
   const ASPECT = 2.39;
-  const el = Object.fromEntries(['film','frame','player','play','pause','restart','fullscreen','seek','timecode','state','sound','loading','error','shot-label','shot-heading','shot-note','camera-note','ending'].map(id => [id, document.getElementById(id)]));
-  let audioContext, audioGain, soundtrack, soundRequest=0, audioSources = [], currentShot=-1;
+  const el = Object.fromEntries(['film','frame','player','play','pause','restart','fullscreen','vr','seek','timecode','state','sound','loading','error','shot-label','shot-heading','shot-note','camera-note','ending'].map(id => [id, document.getElementById(id)]));
+  let audioContext, audioGain, soundtrack, soundRequest=0, audioSources = [], currentShot=-1, xrSession=null;
   const shotButtons = Array.from(document.querySelectorAll('[data-shot]'));
   let randomSeed = 73426;
   const random = () => { randomSeed = (1664525 * randomSeed + 1013904223) >>> 0; return randomSeed / 4294967296; };
@@ -57,6 +57,7 @@
     renderer.outputColorSpace=THREE.SRGBColorSpace;
     renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
     renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+    renderer.xr.enabled=true;
 
     const sky = mesh(new THREE.SphereGeometry(350,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:{},vertexShader:'varying vec3 vPosition; void main(){ vPosition=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',fragmentShader:'varying vec3 vPosition; void main(){float h=normalize(vPosition).y; vec3 horizon=vec3(.80,.85,.86); vec3 zenith=vec3(.10,.40,.72); vec3 c=mix(horizon,zenith,smoothstep(-.05,.6,h)); gl_FragColor=vec4(c,1.);\n #include <tonemapping_fragment>\n #include <colorspace_fragment>\n }'}));
     sky.castShadow=false;sky.receiveShadow=false;
@@ -341,16 +342,20 @@
     el.seek.setAttribute('aria-valuetext',`${elapsed.toFixed(2)} of ${DURATION} seconds`);
   }
   function setStatus(){el.state.textContent=playing?'Playing':elapsed>=DURATION?'Film ended':'Paused';el.play.disabled=playing;el.pause.disabled=!playing;}
-  function tick(now){
-    if(!playing)return;
-    elapsed=Math.min(DURATION,elapsed+(now-lastTick)/1000);lastTick=now;renderAt(elapsed);
-    if(elapsed>=DURATION){pause();return;}animationId=requestAnimationFrame(tick);
+  function loop(now){
+    // A persistent loop (rather than an on-demand rAF) is required so WebXR keeps
+    // presenting stereo frames and head tracking while playback is paused.
+    if(playing){
+      elapsed=Math.min(DURATION,elapsed+(now-lastTick)/1000);lastTick=now;
+      if(elapsed>=DURATION){renderAt(elapsed);pause();return;}
+    }
+    renderAt(elapsed);
   }
   function play(){
     if(playing)return;if(elapsed>=DURATION)elapsed=0;
-    playing=true;lastTick=performance.now();setStatus();syncSound();animationId=requestAnimationFrame(tick);
+    playing=true;lastTick=performance.now();setStatus();syncSound();
   }
-  function pause(){playing=false;cancelAnimationFrame(animationId);setStatus();stopSound();}
+  function pause(){playing=false;setStatus();stopSound();}
   function restart(){pause();elapsed=0;renderAt(0);play();}
   function jumpToShot(index){pause();elapsed=STORY.shots[index].start;renderAt(elapsed);play();}
   function isFullscreen(){return document.fullscreenElement===el.player||document.webkitFullscreenElement===el.player;}
@@ -363,6 +368,18 @@
     el.fullscreen.setAttribute('aria-pressed',String(active));
     el.fullscreen.querySelector('span').textContent=active?'Exit fullscreen':'Fullscreen';
     resize();
+  }
+  function onXRSessionEnded(){
+    xrSession.removeEventListener('end',onXRSessionEnded);xrSession=null;
+    el.vr.setAttribute('aria-pressed','false');el.vr.querySelector('span').textContent='Enter VR';
+  }
+  async function toggleVR(){
+    if(xrSession){xrSession.end();return;}
+    try{
+      xrSession=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','bounded-floor']});
+      xrSession.addEventListener('end',onXRSessionEnded);await renderer.xr.setSession(xrSession);
+      el.vr.setAttribute('aria-pressed','true');el.vr.querySelector('span').textContent='Exit VR';
+    }catch(error){console.error(error);el.vr.disabled=true;el.vr.querySelector('span').textContent='VR unavailable';}
   }
   function resize(){
     const width=el.frame.clientWidth,height=el.frame.clientHeight;
@@ -420,7 +437,7 @@
   try{
     if(typeof THREE==='undefined')throw new Error('The Three.js file could not load. Extract the complete ZIP before opening index.html, or use the standalone last-stop.html file.');
     if(!STORY)throw new Error('The story file could not load. Keep story.js with index.html, or use the standalone last-stop.html file.');
-    makeWorld();elapsed=0;resize();
+    makeWorld();elapsed=0;resize();renderer.setAnimationLoop(loop);
     el.loading.hidden=true;el.play.disabled=false;el.restart.disabled=false;el.seek.disabled=false;el.sound.disabled=false;setStatus();
     el.play.addEventListener('click',play);el.pause.addEventListener('click',pause);el.restart.addEventListener('click',restart);
     shotButtons.forEach((button,i)=>{button.disabled=false;button.addEventListener('click',()=>jumpToShot(i));});
@@ -429,6 +446,11 @@
     if(el.player.requestFullscreen||el.player.webkitRequestFullscreen){
       el.fullscreen.disabled=false;el.fullscreen.addEventListener('click',toggleFullscreen);
       document.addEventListener('fullscreenchange',syncFullscreenUI);document.addEventListener('webkitfullscreenchange',syncFullscreenUI);
+    }
+    if(navigator.xr){
+      navigator.xr.isSessionSupported('immersive-vr').then(supported=>{
+        if(supported){el.vr.disabled=false;el.vr.addEventListener('click',toggleVR);}
+      }).catch(()=>{});
     }
     document.addEventListener('keydown',e=>{
       if(e.ctrlKey||e.metaKey||e.altKey||['INPUT','BUTTON','TEXTAREA','SUMMARY'].includes(e.target.tagName)||e.target.isContentEditable)return;
