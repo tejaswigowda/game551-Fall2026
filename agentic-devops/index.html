@@ -6,6 +6,10 @@
   <meta name="theme-color" content="#11191c">
   <meta name="description" content="Last Stop: a complete 45-second animated short in six shots. A lonely robot, a desert bus stop, and a little hope.">
   <title>Last Stop — An animated short</title>
+  <script>
+	  let renderer, scene, camera, elapsed = 0, playing = false, lastTick = 0, animationId = 0;
+  let robot, head, chestLight, lamp, glow, dust, dustOrigins, torso, ticket, limbs, bus, busDoors, busWheels, roadDust, roadDustOrigins;
+  </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2311191c'/%3E%3Crect x='12' y='19' width='40' height='29' rx='8' fill='%23d8cdb7'/%3E%3Crect x='17' y='27' width='30' height='13' rx='4' fill='%23252f32'/%3E%3Ccircle cx='25' cy='33' r='3' fill='%23efb56f'/%3E%3Ccircle cx='39' cy='33' r='3' fill='%23efb56f'/%3E%3Cpath d='M32 19V10' stroke='%23d8cdb7' stroke-width='3'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -22,8 +26,8 @@
 
     <section id="player" class="player" aria-label="Complete 45-second film in six shots">
       <div id="frame" class="frame">
-        <canvas id="film" aria-label="A small robot sits beneath a warm bus shelter light beside an empty desert road at night. The camera slowly moves closer."></canvas>
-        <div class="frame-label"><span id="shot-label">01 / THE WAIT</span><span>EXT. DESERT · NIGHT</span></div>
+        <canvas id="film" aria-label="A small robot sits beneath a bus shelter beside an empty desert road under the blazing Arizona sun. The camera slowly moves closer."></canvas>
+        <div class="frame-label"><span id="shot-label">01 / THE WAIT</span><span>EXT. DESERT · DAY</span></div>
         <div class="vignette" aria-hidden="true"></div>
         <div id="ending" class="ending" aria-hidden="true"><span>A place to go.</span><small>LAST STOP</small></div>
         <div id="loading" class="loading" role="status">Setting the scene…</div>

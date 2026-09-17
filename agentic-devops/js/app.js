@@ -10,8 +10,6 @@
   const FPS = 24;
   const ASPECT = 2.39;
   const el = Object.fromEntries(['film','frame','player','play','pause','restart','fullscreen','seek','timecode','state','sound','loading','error','shot-label','shot-heading','shot-note','camera-note','ending'].map(id => [id, document.getElementById(id)]));
-  let renderer, scene, camera, elapsed = 0, playing = false, lastTick = 0, animationId = 0;
-  let robot, head, chestLight, lamp, glow, dust, dustOrigins, torso, ticket, limbs, bus, busDoors, busWheels, roadDust, roadDustOrigins;
   let audioContext, audioGain, soundtrack, soundRequest=0, audioSources = [], currentShot=-1;
   const shotButtons = Array.from(document.querySelectorAll('[data-shot]'));
   let randomSeed = 73426;
@@ -52,30 +50,28 @@
 
   function makeWorld() {
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x182c36,.011);
+    scene.fog = new THREE.FogExp2(0xd8cba3,.007);
     camera = new THREE.PerspectiveCamera(36,ASPECT,.035,420);
     renderer = new THREE.WebGLRenderer({canvas:el.film,antialias:true,alpha:false,powerPreference:'high-performance'});
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1,1.75));
     renderer.outputColorSpace=THREE.SRGBColorSpace;
-    renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+    renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
     renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 
-    const sky = mesh(new THREE.SphereGeometry(350,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:{},vertexShader:'varying vec3 vPosition; void main(){ vPosition=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',fragmentShader:'varying vec3 vPosition; void main(){float h=normalize(vPosition).y; vec3 horizon=vec3(.045,.094,.12); vec3 zenith=vec3(.009,.025,.048); vec3 c=mix(horizon,zenith,smoothstep(-.03,.55,h)); gl_FragColor=vec4(c,1.);\n #include <tonemapping_fragment>\n #include <colorspace_fragment>\n }'}));
+    const sky = mesh(new THREE.SphereGeometry(350,32,20),new THREE.ShaderMaterial({side:THREE.BackSide,depthWrite:false,fog:false,uniforms:{},vertexShader:'varying vec3 vPosition; void main(){ vPosition=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',fragmentShader:'varying vec3 vPosition; void main(){float h=normalize(vPosition).y; vec3 horizon=vec3(.80,.85,.86); vec3 zenith=vec3(.10,.40,.72); vec3 c=mix(horizon,zenith,smoothstep(-.05,.6,h)); gl_FragColor=vec4(c,1.);\n #include <tonemapping_fragment>\n #include <colorspace_fragment>\n }'}));
     sky.castShadow=false;sky.receiveShadow=false;
-    const stars=[];const starColors=[];
-    for(let i=0;i<650;i++) {
-      const angle=random()*Math.PI*2;
-      const x=Math.cos(angle)*230,y=10+random()*170,z=Math.sin(angle)*230;
-      stars.push(x,y,z);const v=.35+random()*.55;starColors.push(v*.8,v*.9,v);
-    }
-    const starGeo=new THREE.BufferGeometry();starGeo.setAttribute('position',new THREE.Float32BufferAttribute(stars,3));starGeo.setAttribute('color',new THREE.Float32BufferAttribute(starColors,3));
-    scene.add(new THREE.Points(starGeo,new THREE.PointsMaterial({size:.20,vertexColors:true,transparent:true,opacity:.8,fog:false,depthWrite:false})));
-    const moon=mesh(new THREE.SphereGeometry(2,24,16),new THREE.MeshBasicMaterial({color:0xcbd8c8,fog:false}),-36,18,-95);
-    moon.castShadow=false;moon.receiveShadow=false;
-    const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:radial(),color:0x8ba9bf,transparent:true,opacity:.10,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));
-    halo.position.copy(moon.position);halo.scale.set(14,14,1);scene.add(halo);
-    scene.add(new THREE.HemisphereLight(0x829ead,0x3f2920,.42));
-    const moonlight=new THREE.DirectionalLight(0x87acc7,.75);moonlight.position.set(-30,35,-20);scene.add(moonlight);
+    // The Arizona sun sits high and bright, standing in for the film's key light.
+    const sun=mesh(new THREE.SphereGeometry(2.6,24,16),new THREE.MeshBasicMaterial({color:0xfff6dd,fog:false}),-95,215,-70);
+    sun.castShadow=false;sun.receiveShadow=false;
+    const halo=new THREE.Sprite(new THREE.SpriteMaterial({map:radial(),color:0xffedb8,transparent:true,opacity:.4,depthWrite:false,fog:false,blending:THREE.AdditiveBlending}));
+    halo.position.copy(sun.position);halo.scale.set(34,34,1);scene.add(halo);
+    scene.add(new THREE.HemisphereLight(0xbfe0ff,0xcda872,.9));
+    const sunlight=new THREE.DirectionalLight(0xfff2d9,1.6);
+    sunlight.position.copy(sun.position);sunlight.castShadow=true;
+    sunlight.shadow.mapSize.set(2048,2048);
+    sunlight.shadow.camera.left=-60;sunlight.shadow.camera.right=60;sunlight.shadow.camera.top=60;sunlight.shadow.camera.bottom=-60;
+    sunlight.shadow.camera.near=10;sunlight.shadow.camera.far=400;sunlight.shadow.bias=-.0008;
+    scene.add(sunlight);
 
     const sand=mat(0x8e7154);
     const groundGeo=new THREE.PlaneGeometry(350,350,105,105);groundGeo.rotateX(-Math.PI/2);
@@ -149,7 +145,7 @@
     for(let i=0;i<23;i++)box(.08,.07,2.95,roof,.9+i*.236,3.72,0);
     box(5.35,.23,.09,metal,3.5,3.49,1.47);
     box(5.35,.18,.09,metal,3.5,3.52,-1.47);
-    // A partial timber back lets moonlight outline the figure.
+    // A partial timber back lets the sun outline the figure.
     for(let i=0;i<7;i++)box(.64,1.15,.085,wood,1.38+i*.70,1.14,-1.19);
     box(4.72,.08,.10,metal,3.5,.6,-1.20);box(4.72,.08,.10,metal,3.5,1.72,-1.20);
     for(const z of [.11,.31,.51])box(3.70,.085,.16,wood,3.50,.89,z);
@@ -321,8 +317,9 @@
     roadDust.material.opacity=t<23.5?0:t<29?.22*braking:t<41?0:.18*departure;
     const rp=roadDust.geometry.attributes.position;
     roadDustOrigins.forEach((d,i)=>{const age=(d[3]+t*.19)%1;rp.setXYZ(i,STORY.busX+(d[0]-.5)*(2+age*3),.12+d[1]*age*.85,state.bus.z-3.1-d[2]*age*9);});rp.needsUpdate=true;
+    // Against the desert sun the practical lamp is only a faint accent now.
     const flicker=1+.016*Math.sin(t*17)+.009*Math.sin(t*31);
-    lamp.intensity=47*flicker;glow.material.opacity=.65*flicker;
+    lamp.intensity=2.4*flicker;glow.material.opacity=.12*flicker;
     chestLight.material.color.setRGB(1,.54+.04*Math.sin(t*1.2),.20);
     const p=dust.geometry.attributes.position;
     dustOrigins.forEach((d,i)=>{p.setXYZ(i,((d[0]+.5+t*.17)%8)-.5,d[1]+Math.sin(t*.7+d[3]*12)*.055,d[2]+Math.sin(t*.2+d[3]*8)*.12);});p.needsUpdate=true;
