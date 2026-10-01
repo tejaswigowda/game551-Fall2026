@@ -9,8 +9,8 @@
   const DURATION = STORY?STORY.duration:45;
   const FPS = 24;
   const ASPECT = 2.39;
-  const el = Object.fromEntries(['film','frame','player','play','pause','restart','fullscreen','vr','seek','timecode','state','sound','loading','error','shot-label','shot-heading','shot-note','camera-note','ending'].map(id => [id, document.getElementById(id)]));
-  let audioContext, audioGain, soundtrack, soundRequest=0, audioSources = [], currentShot=-1, xrSession=null;
+  const el = Object.fromEntries(['film','frame','player','play','pause','restart','fullscreen','vr','seek','timecode','state','sound','download-sound','loading','error','shot-label','shot-heading','shot-note','camera-note','ending'].map(id => [id, document.getElementById(id)]));
+  let audioContext, audioGain, soundtrack, soundRequest=0, audioSources = [], currentShot=-1, xrSession=null, resumeAfterRestore=false;
   const shotButtons = Array.from(document.querySelectorAll('[data-shot]'));
   let randomSeed = 73426;
   const random = () => { randomSeed = (1664525 * randomSeed + 1013904223) >>> 0; return randomSeed / 4294967296; };
@@ -428,9 +428,29 @@
     return buffer;
   }
   function mixSound(a,b,t){return a+(b-a)*t;}
+  function bufferToWav(buffer){
+    // Minimal uncompressed PCM WAV writer, since the soundtrack is generated, not fetched.
+    const channelData=buffer.getChannelData(0),view=new DataView(new ArrayBuffer(44+channelData.length*2));
+    const writeStr=(offset,str)=>{for(let i=0;i<str.length;i++)view.setUint8(offset+i,str.charCodeAt(i));};
+    writeStr(0,'RIFF');view.setUint32(4,36+channelData.length*2,true);writeStr(8,'WAVE');
+    writeStr(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+    view.setUint32(24,buffer.sampleRate,true);view.setUint32(28,buffer.sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+    writeStr(36,'data');view.setUint32(40,channelData.length*2,true);
+    for(let i=0,o=44;i<channelData.length;i++,o+=2)view.setInt16(o,Math.max(-1,Math.min(1,channelData[i]))*.999*32767,true);
+    return new Blob([view],{type:'audio/wav'});
+  }
+  function downloadSoundtrack(){
+    try{
+      const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)throw new Error('Audio unavailable');
+      audioContext ||= new Audio();soundtrack ||= makeSoundtrack(audioContext);
+      const url=URL.createObjectURL(bufferToWav(soundtrack));
+      const link=document.createElement('a');link.href=url;link.download='last-stop-soundtrack.wav';link.click();
+      URL.revokeObjectURL(url);
+    }catch{el['download-sound'].disabled=true;}
+  }
   function fail(message){
     pause();el.loading.hidden=true;el.error.hidden=false;el.error.textContent=message;
-    for(const id of ['play','pause','restart','seek','sound'])el[id].disabled=true;
+    for(const id of ['play','pause','restart','seek','sound','download-sound'])el[id].disabled=true;
     shotButtons.forEach(button=>{button.disabled=true;});
     el.state.textContent='Unavailable';
   }
@@ -448,6 +468,7 @@
     shotButtons.forEach((button,i)=>{button.disabled=false;button.addEventListener('click',()=>jumpToShot(i));});
     el.seek.addEventListener('input',()=>{pause();elapsed=Number(el.seek.value);renderAt(elapsed);setStatus();});
     el.sound.addEventListener('change',syncSound);
+    el['download-sound'].disabled=false;el['download-sound'].addEventListener('click',downloadSoundtrack);
     if(el.player.requestFullscreen||el.player.webkitRequestFullscreen){
       el.fullscreen.disabled=false;el.fullscreen.addEventListener('click',toggleFullscreen);
       document.addEventListener('fullscreenchange',syncFullscreenUI);document.addEventListener('webkitfullscreenchange',syncFullscreenUI);
@@ -465,7 +486,28 @@
     });
     document.addEventListener('visibilitychange',()=>{if(document.hidden&&playing)pause();});
     window.addEventListener('resize',resize);
-    el.film.addEventListener('webglcontextlost',e=>{e.preventDefault();fail('The graphics connection was interrupted. Reload this page to restore the film.');});
+    el.film.addEventListener('webglcontextlost',e=>{
+      // Mobile browsers often drop and later restore the context (e.g. after backgrounding
+      // the tab), so this pauses and waits rather than treating it as a fatal error.
+      e.preventDefault();
+      resumeAfterRestore=playing;pause();
+      for(const id of ['play','pause','restart','seek','sound','download-sound'])el[id].disabled=true;
+      shotButtons.forEach(button=>{button.disabled=true;});
+      el.state.textContent='Reconnecting';
+      el.error.hidden=false;el.error.textContent='The graphics connection was interrupted. Reconnecting\u2026';
+    });
+    el.film.addEventListener('webglcontextrestored',()=>{
+      try{
+        const resumeElapsed=elapsed;
+        renderer.setAnimationLoop(null);
+        makeWorld();elapsed=resumeElapsed;resize();renderer.setAnimationLoop(loop);
+        el.error.hidden=true;
+        el.play.disabled=false;el.restart.disabled=false;el.seek.disabled=false;el.sound.disabled=false;el['download-sound'].disabled=false;
+        shotButtons.forEach(button=>{button.disabled=false;});
+        setStatus();
+        if(resumeAfterRestore)play();
+      }catch(error){console.error(error);fail('The graphics connection could not be restored. Reload this page to restore the film.');}
+    });
   }catch(error){
     console.error(error);
     const webglIssue=error.message==='webgl2 unsupported'||/webgl/i.test(error.message||'');
