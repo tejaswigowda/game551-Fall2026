@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mocap Quiz Show</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "three/examples/jsm/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.3.3/lib/three-vrm.module.js"
+  }
+}
+</script>
+<style>
+:root {
+  --pink: #ff3d8b; --yellow: #ffd23f; --cyan: #2de2e6; --purple: #3b1a78; --deep: #12062e;
+  --p1: #ff4d6d; --p2: #3fa9ff; --ok: #34d17a; --bad: #ff4757;
+  --font: "Impact", "Haettenschweiler", "Arial Narrow Bold", "Trebuchet MS", sans-serif;
+  --body: "Trebuchet MS", "Segoe UI", Verdana, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--deep); color: #fff; font-family: var(--body); user-select: none; }
+canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#bg { z-index: 0; }
+#three { z-index: 1; pointer-events: none; }
+#fx { z-index: 50; pointer-events: none; }
+.screen { position: fixed; inset: 0; z-index: 2; display: none; }
+.screen.on { display: flex; }
+button { font-family: var(--font); letter-spacing: 1px; cursor: pointer; border: 0; color: #1a0836; }
+
+.title { font-family: var(--font); letter-spacing: 3px; text-transform: uppercase; text-shadow: 0 4px 0 #6a1b9a, 0 0 24px rgba(255, 61, 139, .7); }
+.btn { background: linear-gradient(#ffe36e, #ffb300); border-radius: 14px; padding: 14px 34px; font-size: 26px; box-shadow: 0 6px 0 #b36b00, 0 10px 24px rgba(0, 0, 0, .4); transition: transform .1s; }
+.btn:hover:not(:disabled) { transform: translateY(-2px) scale(1.04); }
+.btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 #b36b00; }
+.btn:disabled { filter: grayscale(1) brightness(.6); cursor: not-allowed; }
+.btn.small { font-size: 16px; padding: 8px 16px; border-radius: 10px; }
+
+#loading { align-items: center; justify-content: center; flex-direction: column; gap: 22px; background: radial-gradient(circle, #4a1a9c, #12062e); z-index: 100; }
+#loading h1 { font-size: 64px; }
+#loadBar { width: min(480px, 70vw); height: 18px; border-radius: 9px; background: rgba(255, 255, 255, .15); overflow: hidden; }
+#loadFill { height: 100%; width: 0; background: linear-gradient(90deg, var(--pink), var(--yellow)); transition: width .2s; }
+
+#select { flex-direction: column; align-items: center; padding: 3vh 7vw 2vh; gap: 1.6vh; }
+#select h1 { font-size: clamp(36px, 6vw, 76px); }
+#selectMsg { font-size: clamp(16px, 2vw, 26px); font-weight: bold; color: var(--yellow); min-height: 1.4em; text-shadow: 0 2px 4px #000; }
+#cards { display: flex; gap: 2vw; flex: 1; width: 100%; min-height: 0; justify-content: center; }
+.card { position: relative; flex: 1; max-width: 340px; border-radius: 22px; border: 4px solid rgba(255, 255, 255, .35); background: linear-gradient(180deg, rgba(255, 255, 255, .12), rgba(0, 0, 0, .35)); cursor: pointer; transition: transform .15s, border-color .15s; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+.card:hover { transform: translateY(-6px) scale(1.02); border-color: var(--yellow); }
+.card .slot { position: absolute; inset: 0; }
+.card .nameplate { position: relative; background: rgba(10, 0, 30, .85); padding: 10px; text-align: center; font-family: var(--font); font-size: 26px; letter-spacing: 2px; }
+.card .nameplate small { display: block; font-family: var(--body); font-size: 13px; opacity: .7; letter-spacing: 0; }
+.card .badge { position: absolute; z-index: 2; top: 10px; left: 10px; font-family: var(--font); font-size: 22px; padding: 4px 14px; border-radius: 999px; display: none; color: #fff; box-shadow: 0 3px 10px rgba(0, 0, 0, .5); }
+.card .keyhint { position: absolute; z-index: 2; top: 10px; right: 12px; font-family: var(--font); font-size: 22px; opacity: .8; }
+.card.p1 { border-color: var(--p1); } .card.p2 { border-color: var(--p2); } .card.host { border-color: var(--yellow); }
+.card.p1 .badge { display: block; background: var(--p1); } .card.p2 .badge { display: block; background: var(--p2); }
+.card.host .badge { display: block; background: var(--yellow); color: #1a0836; }
+#selectBar { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; justify-content: center; }
+#selectBar input[type=text] { font-family: var(--body); font-size: 18px; padding: 8px 12px; border-radius: 10px; border: 3px solid; background: rgba(0, 0, 0, .5); color: #fff; width: 170px; text-align: center; user-select: text; }
+#nameP1 { border-color: var(--p1) !important; } #nameP2 { border-color: var(--p2) !important; }
+.toggle { display: flex; align-items: center; gap: 8px; font-size: 16px; background: rgba(0, 0, 0, .45); padding: 8px 14px; border-radius: 10px; cursor: pointer; }
+.toggle input { width: 20px; height: 20px; accent-color: var(--pink); }
+
+#game { flex-direction: row; padding: 2vh 2vw 0 5vw; gap: 2vw; }
+#hostCol { position: relative; flex: 0 0 34vw; display: flex; flex-direction: column; justify-content: flex-end; }
+#slotHost { position: relative; flex: 1; border-radius: 26px 26px 0 0; border: 4px solid rgba(255, 210, 63, .8); border-bottom: 0; background: radial-gradient(ellipse at 50% 30%, rgba(255, 255, 255, .22), rgba(0, 0, 0, .15) 70%); }
+#hostPlate { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, var(--pink), #8e24aa); padding: 10px 20px; font-family: var(--font); font-size: 28px; letter-spacing: 2px; clip-path: polygon(0 0, 96% 0, 100% 100%, 0 100%); }
+#hostPlate small { display: block; font-family: var(--body); font-size: 13px; letter-spacing: 1px; opacity: .85; }
+#camBox { position: absolute; z-index: 4; top: 10px; left: 10px; width: 150px; border-radius: 12px; overflow: hidden; border: 3px solid var(--cyan); background: #000; display: none; }
+#camBox video { width: 100%; display: block; transform: scaleX(-1); }
+#camBox .live { position: absolute; top: 4px; left: 6px; font-size: 11px; font-weight: bold; background: var(--bad); padding: 1px 6px; border-radius: 6px; animation: blink 1s infinite; }
+#mainCol { flex: 1; display: flex; flex-direction: column; gap: 1.6vh; min-width: 0; padding-top: 1vh; }
+#topbar { display: flex; align-items: center; gap: 14px; }
+.pill { font-family: var(--font); font-size: 22px; letter-spacing: 2px; padding: 6px 18px; border-radius: 999px; background: var(--purple); border: 3px solid var(--cyan); white-space: nowrap; }
+#category { background: var(--pink); border-color: #fff; }
+#timer { flex: 1; height: 22px; border-radius: 11px; background: rgba(0, 0, 0, .5); border: 3px solid #fff; overflow: hidden; }
+#timerFill { height: 100%; width: 100%; background: linear-gradient(90deg, var(--ok), var(--yellow), var(--bad)); transform-origin: left; }
+#qcard { position: relative; flex: 0 0 auto; min-height: 14vh; border-radius: 22px; padding: 1.6vh 2vw; background: linear-gradient(135deg, #fff, #ffe9f4); color: #25093f; font-size: clamp(20px, 2.6vw, 38px); font-weight: bold; display: flex; align-items: center; justify-content: center; text-align: center; border: 6px solid var(--yellow); box-shadow: 0 8px 0 #7a2bb5, 0 14px 34px rgba(0, 0, 0, .5); }
+#qcard.pop { animation: pop .5s cubic-bezier(.2, 1.6, .4, 1); }
+#answers { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4vh 1.2vw; }
+.ans { position: relative; display: flex; align-items: center; gap: 12px; text-align: left; padding: 1.4vh 14px; font-size: clamp(16px, 1.9vw, 28px); font-weight: bold; border-radius: 16px; background: linear-gradient(#5a2db0, #3b1a78); color: #fff; border: 4px solid rgba(255, 255, 255, .4); min-height: 8vh; }
+.ans .letter { font-family: var(--font); font-size: 1.1em; width: 1.9em; height: 1.9em; line-height: 1.9em; text-align: center; border-radius: 50%; background: var(--yellow); color: #25093f; flex: 0 0 auto; }
+.ans .keys { position: absolute; right: 10px; top: 4px; font-size: 12px; opacity: .9; }
+.ans .keys b:first-child { color: var(--p1); } .ans .keys b:last-child { color: var(--p2); }
+.ans .chips { position: absolute; right: 10px; bottom: 5px; display: flex; gap: 4px; }
+.ans .chip { font-size: 12px; font-family: var(--font); padding: 2px 8px; border-radius: 999px; }
+.ans.hidden { visibility: hidden; }
+.ans.in { animation: ansIn .45s cubic-bezier(.2, 1.4, .4, 1) both; }
+.ans.correct { background: linear-gradient(#35e085, #159a52); border-color: #fff; animation: pulse .5s 3; }
+.ans.wrong { background: linear-gradient(#ff5d6c, #a31524); animation: shake .4s; }
+.ans.dim { opacity: .45; }
+#podiums { flex: 1; display: flex; gap: 2vw; min-height: 0; }
+.podium { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; }
+.podium .slot { position: absolute; inset: 0 0 56px 0; }
+.podium .plate { position: relative; z-index: 3; height: 76px; border-radius: 16px 16px 0 0; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; font-family: var(--font); letter-spacing: 2px; box-shadow: 0 -4px 20px rgba(0, 0, 0, .35); }
+.podium.p1 .plate { background: linear-gradient(var(--p1), #a3123a); } .podium.p2 .plate { background: linear-gradient(var(--p2), #0f4f99); }
+.podium .pname { font-size: 24px; } .podium .pname small { display: block; font-family: var(--body); font-size: 12px; opacity: .9; letter-spacing: 0; }
+.podium .score { font-size: 40px; text-shadow: 0 3px 0 rgba(0, 0, 0, .4); }
+.podium .status { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 4; font-family: var(--font); font-size: 18px; padding: 3px 14px; border-radius: 999px; background: rgba(0, 0, 0, .7); white-space: nowrap; opacity: 0; transition: opacity .2s; }
+.podium .status.show { opacity: 1; }
+.podium.locked .plate { filter: brightness(1.3); }
+.float { position: fixed; z-index: 60; font-family: var(--font); font-size: 54px; pointer-events: none; text-shadow: 0 3px 0 #000, 0 0 20px currentColor; animation: floatUp 1.6s ease-out forwards; }
+#host-say { position: absolute; z-index: 5; left: 14px; right: 14px; bottom: 84px; background: #fff; color: #25093f; padding: 10px 16px; border-radius: 16px; font-weight: bold; font-size: clamp(14px, 1.3vw, 19px); box-shadow: 0 5px 16px rgba(0, 0, 0, .4); display: none; }
+#host-say::after { content: ""; position: absolute; bottom: -12px; left: 40px; border: 12px solid transparent; border-top-color: #fff; border-bottom: 0; }
+#host-say.show { display: block; animation: pop .35s cubic-bezier(.2, 1.6, .4, 1); }
+#tools { display: flex; gap: 8px; }
+
+#final { align-items: center; justify-content: center; flex-direction: column; gap: 14px; background: rgba(10, 0, 30, .6); z-index: 80; text-align: center; }
+#final h1 { font-size: clamp(40px, 7vw, 96px); }
+#final .scores { display: flex; gap: 40px; font-family: var(--font); font-size: 36px; letter-spacing: 2px; }
+#final .scores div:first-child { color: var(--p1); } #final .scores div:last-child { color: var(--p2); }
+#toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 200; background: rgba(0, 0, 0, .85); padding: 10px 20px; border-radius: 12px; font-size: 15px; display: none; max-width: 80vw; text-align: center; }
+
+@keyframes pop { from { transform: scale(.7); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes ansIn { from { transform: translateX(-60px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes pulse { 50% { transform: scale(1.04); } }
+@keyframes shake { 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+@keyframes blink { 50% { opacity: .3; } }
+@keyframes floatUp { from { transform: translate(-50%, 0) scale(.6); opacity: 1; } 20% { transform: translate(-50%, -20px) scale(1.2); } to { transform: translate(-50%, -140px) scale(1); opacity: 0; } }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<canvas id="three"></canvas>
+
+<div id="loading" class="screen on">
+  <h1 class="title">Mocap Quiz Show</h1>
+  <div id="loadBar"><div id="loadFill"></div></div>
+  <div id="loadText">Warming up the studio lights…</div>
+</div>
+
+<div id="select" class="screen">
+  <h1 class="title">Choose Your Contestant</h1>
+  <div id="selectMsg"></div>
+  <div id="cards"></div>
+  <div id="selectBar">
+    <input type="text" id="nameP1" maxlength="12" value="Player 1">
+    <input type="text" id="nameP2" maxlength="12" value="Player 2">
+    <label class="toggle"><input type="checkbox" id="useCam"> 📷 Host mocap (webcam)</label>
+    <button class="btn small" id="resetPick">Reset picks</button>
+    <button class="btn" id="startBtn" disabled>Start Show!</button>
+  </div>
+</div>
+
+<div id="game" class="screen">
+  <div id="hostCol">
+    <div id="slotHost">
+      <div id="camBox"><video id="cam" autoplay playsinline muted></video><span class="live">LIVE MOCAP</span></div>
+      <div id="host-say"></div>
+      <div id="hostPlate"><span id="hostName">Host</span><small id="hostMode">AUTO HOST</small></div>
+    </div>
+  </div>
+  <div id="mainCol">
+    <div id="topbar">
+      <div class="pill" id="roundPill">Q 1/8</div>
+      <div class="pill" id="category">Category</div>
+      <div id="timer"><div id="timerFill"></div></div>
+      <div id="tools">
+        <button class="btn small" id="voiceBtn">🔊 Voice: ON</button>
+        <button class="btn small" id="mirrorBtn">↔ Mirror: ON</button>
+      </div>
+    </div>
+    <div id="qcard"></div>
+    <div id="answers"></div>
+    <div id="podiums">
+      <div class="podium p1" id="pod0"><div class="slot" id="slotP1"></div><div class="status"></div><div class="plate"><div class="pname"><span class="n"></span><small>Keys: Q W E R</small></div><div class="score">0</div></div></div>
+      <div class="podium p2" id="pod1"><div class="slot" id="slotP2"></div><div class="status"></div><div class="plate"><div class="pname"><span class="n"></span><small>Keys: U I O P</small></div><div class="score">0</div></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="final" class="screen">
+  <h1 class="title" id="finalTitle"></h1>
+  <div class="scores"><div id="finalP1"></div><div id="finalP2"></div></div>
+  <button class="btn" id="againBtn">Play Again</button>
+</div>
+
+<canvas id="fx"></canvas>
+<div id="toast"></div>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+
+const $ = (s) => document.querySelector(s);
+const V3 = THREE.Vector3, Q = THREE.Quaternion;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const pickOne = (a) => a[Math.floor(Math.random() * a.length)];
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+const toast = (msg, ms = 3500) => { const t = $('#toast'); t.textContent = msg; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => (t.style.display = 'none'), ms); };
+
+/* ============================== DATA ============================== */
+const CHARS = [
+  { file: './chars/1.vrm', name: 'Blaze', tag: 'The Daredevil' },
+  { file: './chars/2.vrm', name: 'Luna', tag: 'The Brainiac' },
+  { file: './chars/3.vrm', name: 'Rex', tag: 'The Showman' },
+];
+const QUESTIONS = [
+  ['Games', 'Which company created Mario?', 'Nintendo', ['Sega', 'Sony', 'Atari']],
+  ['Games', 'What is the best-selling video game of all time?', 'Minecraft', ['Tetris', 'GTA V', 'Fortnite']],
+  ['Games', 'In Pac-Man, how many ghosts chase you?', 'Four', ['Two', 'Three', 'Five']],
+  ['Games', 'Which game engine uses C# as its main scripting language?', 'Unity', ['Unreal', 'Source', 'id Tech']],
+  ['Animation', 'How many frames per second is classic cinema film?', '24', ['12', '30', '60']],
+  ['Animation', 'What technique records a real actor’s movement to drive a digital character?', 'Motion capture', ['Rotoscoping', 'Cel shading', 'Ray tracing']],
+  ['Animation', 'Which studio made "Toy Story", the first full CGI feature film?', 'Pixar', ['DreamWorks', 'Ghibli', 'Blue Sky']],
+  ['Animation', 'Which animation principle makes a bouncing ball feel flexible?', 'Squash & stretch', ['Rigging', 'Tweening', 'Culling']],
+  ['Tech', 'What does "GPU" stand for?', 'Graphics Processing Unit', ['General Purpose Unit', 'Game Power Utility', 'Gigabit Pixel Updater']],
+  ['Tech', 'Which library renders 3D graphics in the browser with WebGL?', 'Three.js', ['jQuery', 'Lodash', 'Express']],
+  ['Tech', 'What file format is used for 3D humanoid avatars like these contestants?', 'VRM', ['MP3', 'PDF', 'CSV']],
+  ['Tech', 'In 3D, what is a "mesh" made of?', 'Vertices, edges & faces', ['Only pixels', 'Audio waves', 'Text strings']],
+  ['Science', 'What is the closest planet to the Sun?', 'Mercury', ['Venus', 'Mars', 'Earth']],
+  ['Science', 'How many bones are in an adult human body?', '206', ['106', '212', '300']],
+  ['Pop', 'Which character is a yellow, electric Pokémon?', 'Pikachu', ['Charmander', 'Jigglypuff', 'Meowth']],
+  ['Pop', 'Which game features the phrase "The cake is a lie"?', 'Portal', ['Half-Life', 'Doom', 'Halo']],
+  ['Pop', 'In which game do you build with blocks and fear Creepers?', 'Minecraft', ['Roblox', 'Terraria', 'Among Us']],
+  ['General', 'How many sides does a hexagon have?', 'Six', ['Five', 'Seven', 'Eight']],
+  ['General', 'What is the capital of Japan?', 'Tokyo', ['Kyoto', 'Osaka', 'Seoul']],
+  ['General', 'Which ocean is the largest?', 'Pacific', ['Atlantic', 'Indian', 'Arctic']],
+];
+const ROUNDS = 8, ANSWER_TIME = 15;
+const PLAYER_KEYS = [['q', 'w', 'e', 'r'], ['u', 'i', 'o', 'p']];
+const HOST_INTRO = ['Welcome, welcome, WELCOME to the show!', 'Lights, cameras, and a LOT of brain power!', 'Fingers on your buzzers, contestants!'];
+const HOST_RIGHT = ['Brilliant!', 'That’s correct!', 'Ding ding ding!', 'You nailed it!'];
+const HOST_WRONG = ['Ooh, so close!', 'Not quite, my friend.', 'Sorry, that’s a miss!', 'Better luck next time!'];
+
+/* ============================== AUDIO ============================== */
+let actx;
+function beep(freq, dur = .15, type = 'square', vol = .08, when = 0) {
+  try {
+    actx ||= new (window.AudioContext || window.webkitAudioContext)();
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.type = type; o.frequency.value = freq;
+    const t = actx.currentTime + when;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + dur);
+  } catch {}
+}
+const sfx = {
+  lock: () => beep(660, .1, 'triangle', .1),
+  tick: () => beep(900, .05, 'square', .03),
+  ok: () => [523, 659, 784, 1047].forEach((f, i) => beep(f, .18, 'triangle', .1, i * .08)),
+  bad: () => { beep(220, .25, 'sawtooth', .08); beep(150, .35, 'sawtooth', .08, .18); },
+  start: () => [392, 523, 659, 784].forEach((f, i) => beep(f, .2, 'square', .06, i * .1)),
+};
+
+/* ============================== 2D ANIMATED STAGE (canvas) ============================== */
+const bg = $('#bg'), bgc = bg.getContext('2d');
+const fxCv = $('#fx'), fxc = fxCv.getContext('2d');
+const bokeh = Array.from({ length: 28 }, () => ({ x: Math.random(), y: Math.random(), r: 10 + Math.random() * 40, s: .02 + Math.random() * .05, h: Math.random() * 360 }));
+function resize2D() {
+  const d = Math.min(devicePixelRatio, 2);
+  for (const c of [bg, fxCv]) { c.width = innerWidth * d; c.height = innerHeight * d; }
+  bgc.setTransform(d, 0, 0, d, 0, 0); fxc.setTransform(d, 0, 0, d, 0, 0);
+}
+let flash = 0, flashColor = '#fff';
+function drawBackground(t) {
+  const W = innerWidth, H = innerHeight;
+  const g = bgc.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#2a0f63'); g.addColorStop(.6, '#4b1a8f'); g.addColorStop(1, '#12062e');
+  bgc.fillStyle = g; bgc.fillRect(0, 0, W, H);
+  bgc.save(); bgc.translate(W * .6, H * .35); bgc.rotate(t * .08);
+  const n = 18, R = Math.hypot(W, H);
+  for (let i = 0; i < n; i++) {
+    bgc.beginPath(); bgc.moveTo(0, 0);
+    bgc.arc(0, 0, R, (i / n) * Math.PI * 2, ((i + .5) / n) * Math.PI * 2); bgc.closePath();
+    bgc.fillStyle = `rgba(255,255,255,${.035 + .02 * Math.sin(t + i)})`; bgc.fill();
+  }
+  bgc.restore();
+  for (const b of bokeh) {
+    const y = ((b.y - t * b.s) % 1 + 1) % 1;
+    bgc.beginPath(); bgc.arc(b.x * W + Math.sin(t * .5 + b.h) * 20, y * H, b.r, 0, 7);
+    bgc.fillStyle = `hsla(${(b.h + t * 10) % 360},90%,65%,.09)`; bgc.fill();
+  }
+  for (let i = 0; i < 3; i++) {
+    const x = W * (.2 + .3 * i), a = Math.sin(t * .7 + i * 2) * .5;
+    bgc.save(); bgc.translate(x, -10); bgc.rotate(a);
+    const bm = bgc.createLinearGradient(0, 0, 0, H * 1.2);
+    bm.addColorStop(0, 'rgba(255,240,180,.28)'); bm.addColorStop(1, 'rgba(255,240,180,0)');
+    bgc.fillStyle = bm; bgc.beginPath(); bgc.moveTo(-8, 0); bgc.lineTo(8, 0); bgc.lineTo(160, H * 1.2); bgc.lineTo(-160, H * 1.2); bgc.fill();
+    bgc.restore();
+  }
+  for (const side of [0, 1]) {
+    const w = Math.max(40, W * .04);
+    bgc.save(); if (side) { bgc.translate(W, 0); bgc.scale(-1, 1); }
+    const cg = bgc.createLinearGradient(0, 0, w * 1.6, 0);
+    cg.addColorStop(0, '#5a0018'); cg.addColorStop(.5, '#b3153a'); cg.addColorStop(1, '#6a0b25');
+    bgc.fillStyle = cg; bgc.beginPath(); bgc.moveTo(0, 0);
+    for (let y = 0; y <= H; y += 12) bgc.lineTo(w + Math.sin(y * .02 + t * 1.2) * 8 + Math.sin(y * .006) * 10, y);
+    bgc.lineTo(0, H); bgc.fill();
+    bgc.strokeStyle = 'rgba(0,0,0,.25)';
+    for (let f = 1; f < 5; f++) { bgc.beginPath(); for (let y = 0; y <= H; y += 12) bgc.lineTo(f * w / 5 + Math.sin(y * .02 + t * 1.2 + f) * 5, y); bgc.stroke(); }
+    bgc.restore();
+  }
+  const fl = bgc.createLinearGradient(0, H * .85, 0, H);
+  fl.addColorStop(0, 'rgba(255,255,255,0)'); fl.addColorStop(1, 'rgba(255,210,63,.18)');
+  bgc.fillStyle = fl; bgc.fillRect(0, H * .85, W, H * .15);
+  if (flash > 0) { bgc.fillStyle = flashColor; bgc.globalAlpha = flash * .35; bgc.fillRect(0, 0, W, H); bgc.globalAlpha = 1; flash = Math.max(0, flash - .04); }
+}
+
+const parts = [];
+const COLORS = ['#ff3d8b', '#ffd23f', '#2de2e6', '#34d17a', '#fff', '#b36bff'];
+function confetti(x, y, n = 70) {
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (Math.random() - .5) * 2.4, s = 6 + Math.random() * 12;
+    parts.push({ k: 'c', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, r: Math.random() * 6, vr: (Math.random() - .5) * .4, w: 6 + Math.random() * 8, h: 4 + Math.random() * 6, life: 1, col: COLORS[i % COLORS.length] });
+  }
+}
+function ring(x, y, col) { parts.push({ k: 'r', x, y, rad: 10, life: 1, col }); }
+function crossMark(x, y) { parts.push({ k: 'x', x, y, life: 1 }); }
+function drawFX() {
+  fxc.clearRect(0, 0, innerWidth, innerHeight);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i];
+    if (p.k === 'c') {
+      p.vy += .35; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr; p.life -= .008;
+      fxc.save(); fxc.translate(p.x, p.y); fxc.rotate(p.r); fxc.globalAlpha = clamp(p.life * 2, 0, 1); fxc.fillStyle = p.col; fxc.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); fxc.restore();
+    } else if (p.k === 'r') {
+      p.rad += 9; p.life -= .03; fxc.globalAlpha = clamp(p.life, 0, 1); fxc.strokeStyle = p.col; fxc.lineWidth = 8 * p.life; fxc.beginPath(); fxc.arc(p.x, p.y, p.rad, 0, 7); fxc.stroke();
+    } else {
+      p.life -= .02; const s = 50 * (1 + (1 - p.life) * .4); fxc.globalAlpha = clamp(p.life * 1.5, 0, 1);
+      fxc.strokeStyle = '#ff4757'; fxc.lineWidth = 16; fxc.lineCap = 'round';
+      fxc.beginPath(); fxc.moveTo(p.x - s, p.y - s); fxc.lineTo(p.x + s, p.y + s); fxc.moveTo(p.x + s, p.y - s); fxc.lineTo(p.x - s, p.y + s); fxc.stroke();
+    }
+    if (p.life <= 0 || p.y > innerHeight + 50) parts.splice(i, 1);
+  }
+  fxc.globalAlpha = 1;
+}
+const centerOf = (el) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+
+/* ============================== THREE / VRM ============================== */
+const renderer = new THREE.WebGLRenderer({ canvas: $('#three'), alpha: true, antialias: true });
+renderer.setClearColor(0x000000, 0);
+renderer.autoClear = false;
+function resize3D() { renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight, false); resize2D(); }
+addEventListener('resize', resize3D); resize3D();
+
+// Each DOM "slot" gets its own scissored viewport + camera so characters sit inside the 2D UI.
+const FRAMES = { host: { vw: 1.4, vh: 1.55, dy: -.45 }, bust: { vw: .8, vh: .78, dy: -.13 } };
+const FOV = 24;
+const slots = [];
+function makeSlot(el, kind) {
+  const scene = new THREE.Scene();
+  scene.add(new THREE.AmbientLight(0xffffff, .55));
+  const key = new THREE.DirectionalLight(0xffffff, .9); key.position.set(1, 1.6, 2.5); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xff9ad5, .6); rim.position.set(-2, 1.5, -1.5); scene.add(rim);
+  const slot = { el, kind, scene, camera: new THREE.PerspectiveCamera(FOV, 1, .1, 20), vrm: null };
+  slots.push(slot);
+  return slot;
+}
+function assign(slot, vrm) {
+  slot.vrm = vrm;
+  if (vrm) { slot.scene.add(vrm.scene); if (vrm.lookAt) vrm.lookAt.target = slot.camera; }
+}
+function frameSlot(slot, w, h) {
+  const f = FRAMES[slot.kind], aspect = w / h;
+  const vh = Math.max(f.vh, f.vw / aspect), cy = slot.vrm.scene.userData.headY + f.dy;
+  slot.camera.aspect = aspect; slot.camera.updateProjectionMatrix();
+  slot.camera.position.set(0, cy, (vh / 2) / Math.tan(THREE.MathUtils.degToRad(FOV / 2)));
+  slot.camera.lookAt(0, cy, 0);
+}
+
+/* Rig: arms are aimed in world space by rotating VRM *normalized* bones (rest pose = identity). */
+function buildRig(vrm) {
+  const nb = (n) => vrm.humanoid.getNormalizedBoneNode(n);
+  const rig = {};
+  for (const [side, pre] of [['L', 'left'], ['R', 'right']]) {
+    const upper = nb(pre + 'UpperArm'), lower = nb(pre + 'LowerArm'), hand = nb(pre + 'Hand');
+    rig[side] = { upper, lower, restU: lower.position.clone().normalize(), restL: hand.position.clone().normalize() };
+  }
+  rig.head = nb('head'); rig.neck = nb('neck'); rig.chest = nb('chest') || nb('spine');
+  return rig;
+}
+const v = (x, y, z) => new V3(x, y, z).normalize();
+const sceneInv = new Q(), tq1 = new Q(), tq2 = new Q(), tv = new V3();
+function applyArms(vrm, st, targets, dt) {
+  const k = 1 - Math.exp(-dt * 14);
+  sceneInv.copy(vrm.scene.quaternion).invert();
+  for (const side of ['L', 'R']) {
+    const d = st.dirs[side], t = targets[side], r = vrm.rig[side];
+    d.u.lerp(t.u, k).normalize(); d.l.lerp(t.l, k).normalize();
+    tq1.setFromUnitVectors(r.restU, tv.copy(d.u).applyQuaternion(sceneInv));
+    r.upper.quaternion.copy(tq1);
+    tq2.setFromUnitVectors(r.restL, tv.copy(d.l).applyQuaternion(sceneInv));
+    r.lower.quaternion.copy(tq1.invert().multiply(tq2));
+  }
+}
+const eul = new THREE.Euler(), hq = new Q(), sceneQ = new Q(), idq = new Q();
+function applyHead(vrm, st, worldQ, dt) {
+  st.headQ.slerp(worldQ, 1 - Math.exp(-dt * 12));
+  sceneQ.copy(vrm.scene.quaternion); sceneInv.copy(sceneQ).invert();
+  hq.copy(sceneInv).multiply(st.headQ).multiply(sceneQ); // world rotation -> model frame
+  vrm.rig.neck.quaternion.copy(idq.identity().slerp(hq, .35));
+  vrm.rig.head.quaternion.copy(idq.identity().slerp(hq, .65));
+}
+function applyExpressions(vrm, st, targets, dt) {
+  const em = vrm.expressionManager; if (!em) return;
+  const k = 1 - Math.exp(-dt * 16);
+  for (const n of ['aa', 'happy', 'sad', 'surprised', 'blink']) {
+    st.exp[n] = (st.exp[n] || 0) + ((targets[n] || 0) - (st.exp[n] || 0)) * k;
+    em.setValue(n, clamp(st.exp[n], 0, 1));
+  }
+}
+const newState = () => ({
+  t: Math.random() * 10, mode: 'idle', speaking: false, hover: false,
+  dirs: { L: { u: v(.12, -1, 0), l: v(.1, -1, .1) }, R: { u: v(-.12, -1, 0), l: v(-.1, -1, .1) } },
+  headQ: new Q(), exp: {}, blinkAt: 2 + Math.random() * 3, blinkT: 0,
+});
+const setMode = (vrm, mode) => { vrm.scene.userData.st.mode = mode; };
+
+/* Procedural performance: players, and the host when mocap is off */
+function procTargets(st, mode = st.mode) {
+  const t = st.t, T = {
+    L: { u: v(.12, -1, 0), l: v(.1, -1, .1) }, R: { u: v(-.12, -1, 0), l: v(-.1, -1, .1) },
+    head: [Math.sin(t * .7) * .03, Math.sin(t * .5) * .08, Math.sin(t * .4) * .02], exp: {},
+  };
+  const sw = Math.sin(t * 1.5) * .04; T.L.u.x += sw; T.R.u.x -= sw;
+  switch (mode) {
+    case 'wave': T.R.u = v(-.8, .6, .1); T.R.l = v(-.35 - .5 * Math.sin(t * 9), 1, .1); T.exp.happy = .7; T.head[1] = -.15; break;
+    case 'cheer':
+      T.L.u = v(.65, .75, .1); T.R.u = v(-.65, .75, .1);
+      T.L.l = v(.35 + .35 * Math.sin(t * 10), 1, .1); T.R.l = v(-.35 - .35 * Math.sin(t * 10), 1, .1);
+      T.exp.happy = 1; T.head[0] = -.12; T.head[2] = Math.sin(t * 8) * .08; break;
+    case 'sad':
+      T.head[0] = .38; T.exp.sad = .9; T.L.u = v(.05, -1, 0); T.R.u = v(-.05, -1, 0); T.L.l = v(0, -1, .25); T.R.l = v(0, -1, .25); break;
+    case 'lock': T.R.u = v(-.12, 1, 0); T.R.l = v(-.08, 1, .05); T.head[0] = -.06; T.exp.happy = .35; break;
+    case 'think': T.R.u = v(-.2, -.7, .5); T.R.l = v(.35, .6, .75); T.head[2] = .1; T.head[0] = .08; T.exp.surprised = .15; break;
+    case 'applaud': {
+      const c = .08 + .3 * (.5 + .5 * Math.sin(t * 13));
+      T.L.u = v(.3, -.75, .6); T.R.u = v(-.3, -.75, .6); T.L.l = v(c, .35, 1); T.R.l = v(-c, .35, 1); T.exp.happy = .9; T.head[0] = .05; break;
+    }
+    case 'talk': {
+      const a = Math.sin(t * 2.1), b = Math.sin(t * 1.7 + 1);
+      T.L.u = v(.55, -.55 + .2 * a, .45); T.L.l = v(.25, .2 + .5 * a, 1);
+      T.R.u = v(-.55, -.55 + .2 * b, .45); T.R.l = v(-.25, .2 + .5 * b, 1);
+      T.head[1] = Math.sin(t * 1.1) * .16; T.head[0] = Math.sin(t * 2.3) * .05; T.exp.happy = .3; break;
+    }
+  }
+  if (st.speaking) T.exp.aa = Math.abs(Math.sin(t * 14)) * (.35 + .35 * Math.abs(Math.sin(t * 3.1)));
+  else if (mode === 'cheer') T.exp.aa = .5 + .3 * Math.sin(t * 10);
+  return T;
+}
+
+/* ============================== HOST MOCAP (MediaPipe pose + face) ============================== */
+const mocap = { on: false, video: $('#cam'), pose: null, face: null, poseAt: 0, faceAt: 0, mirror: true, lastT: -1, lm: [], face_: null, stream: null };
+async function startMocap() {
+  if (mocap.on) return true;
+  try {
+    mocap.stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' }, audio: false });
+    mocap.video.srcObject = mocap.stream; await mocap.video.play();
+    if (!mocap.pose) {
+      toast('Loading motion-capture models…', 8000);
+      const ver = '0.10.14', cdn = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${ver}`;
+      const vision = await import(`${cdn}/vision_bundle.mjs`);
+      const fs = await vision.FilesetResolver.forVisionTasks(`${cdn}/wasm`);
+      const base = 'https://storage.googleapis.com/mediapipe-models/';
+      const mk = async (cls, path, opts) => {
+        for (const delegate of ['GPU', 'CPU']) {
+          try { return await cls.createFromOptions(fs, { baseOptions: { modelAssetPath: base + path, delegate }, runningMode: 'VIDEO', ...opts }); } catch (e) { if (delegate === 'CPU') throw e; }
+        }
+      };
+      mocap.pose = await mk(vision.PoseLandmarker, 'pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task', { numPoses: 1 });
+      mocap.face = await mk(vision.FaceLandmarker, 'face_landmarker/face_landmarker/float16/1/face_landmarker.task', { numFaces: 1, outputFaceBlendshapes: true, outputFacialTransformationMatrixes: true });
+    }
+    mocap.on = true; $('#camBox').style.display = 'block';
+    toast('Mocap live! Stand back so your arms and face are visible.');
+    return true;
+  } catch (e) {
+    console.warn(e); stopMocap();
+    toast('Webcam mocap unavailable (' + (e.name || e.message) + '), using auto host.');
+    return false;
+  }
+}
+function stopMocap() {
+  mocap.on = false; $('#camBox').style.display = 'none';
+  mocap.stream?.getTracks().forEach((t) => t.stop()); mocap.stream = null;
+}
+const fm = new THREE.Matrix4(), fp = new V3(), fsc = new V3(), fq = new Q();
+function mocapPoll() {
+  if (!mocap.on || mocap.video.readyState < 2 || mocap.video.currentTime === mocap.lastT) return;
+  mocap.lastT = mocap.video.currentTime;
+  const ts = performance.now();
+  try {
+    const pr = mocap.pose.detectForVideo(mocap.video, ts);
+    if (pr.worldLandmarks?.[0]) { mocap.lm = pr.worldLandmarks[0]; mocap.poseAt = ts; }
+    const fr = mocap.face.detectForVideo(mocap.video, ts);
+    if (fr.facialTransformationMatrixes?.[0]) {
+      fm.fromArray(fr.facialTransformationMatrixes[0].data).decompose(fp, fq, fsc);
+      const b = {};
+      for (const c of fr.faceBlendshapes?.[0]?.categories || []) b[c.categoryName] = c.score;
+      mocap.face_ = { q: fq.clone(), b }; mocap.faceAt = ts;
+    }
+  } catch (e) { console.warn('mocap frame failed', e); }
+}
+// MediaPipe world coords: x right, y down, z toward the scene. Avatar world: x right, y up, z toward viewer.
+const poseDir = (a, b) => new V3((mocap.mirror ? -1 : 1) * (b.x - a.x), -(b.y - a.y), -(b.z - a.z)).normalize();
+function mocapArms(st) {
+  const lm = mocap.lm, out = procTargets(st, 'idle');
+  const idx = mocap.mirror ? { L: [12, 14, 16], R: [11, 13, 15] } : { L: [11, 13, 15], R: [12, 14, 16] };
+  for (const side of ['L', 'R']) {
+    const [s, e, w] = idx[side].map((i) => lm[i]);
+    if (!s || !e || (s.visibility ?? 1) < .5 || (e.visibility ?? 1) < .5) continue;
+    out[side] = { u: poseDir(s, e), l: w && (w.visibility ?? 1) > .4 ? poseDir(e, w) : poseDir(s, e) };
+  }
+  return out;
+}
+function mocapHead() {
+  const q = mocap.face_?.q.clone(); if (!q) return null;
+  if (mocap.mirror) { q.y *= -1; q.z *= -1; }
+  return q;
+}
+function mocapExp() {
+  const b = mocap.face_?.b || {}, g = (n) => b[n] || 0;
+  return {
+    aa: clamp(g('jawOpen') * 1.4, 0, 1),
+    blink: clamp(((g('eyeBlinkLeft') + g('eyeBlinkRight')) / 2 - .15) * 1.6, 0, 1),
+    happy: clamp((g('mouthSmileLeft') + g('mouthSmileRight')) / 2 * 1.5, 0, 1),
+    surprised: clamp(g('browInnerUp') * .8, 0, 1),
+    sad: clamp((g('mouthFrownLeft') + g('mouthFrownRight')) / 2 * 1.5, 0, 1),
+  };
+}
+
+/* ============================== LOAD VRMs ============================== */
+const vrms = [];
+async function loadAll() {
+  const progress = CHARS.map(() => 0);
+  const upd = () => { $('#loadFill').style.width = (progress.reduce((a, b) => a + b, 0) / CHARS.length * 100).toFixed(0) + '%'; };
+  await Promise.all(CHARS.map((c, i) => new Promise((res, rej) => {
+    const loader = new GLTFLoader();
+    loader.register((p) => new VRMLoaderPlugin(p));
+    loader.load(c.file, (gltf) => {
+      const vrm = gltf.userData.vrm;
+      VRMUtils.removeUnnecessaryVertices(gltf.scene);
+      VRMUtils.combineSkeletons?.(gltf.scene);
+      VRMUtils.rotateVRM0(vrm);
+      vrm.scene.traverse((o) => { o.frustumCulled = false; });
+      vrm.rig = buildRig(vrm);
+      vrm.scene.userData.st = newState();
+      vrm.scene.updateMatrixWorld(true);
+      vrm.scene.userData.headY = vrm.humanoid.getNormalizedBoneNode('head').getWorldPosition(new V3()).y;
+      vrms[i] = vrm; progress[i] = 1; upd(); res();
+    }, (e) => { if (e.total) { progress[i] = e.loaded / e.total * .98; upd(); } }, rej);
+  })));
+}
+
+/* ============================== SELECT SCREEN ============================== */
+const sel = { picks: [null, null], host: null, cardSlots: [] };
+function buildCards() {
+  const wrap = $('#cards'); wrap.innerHTML = '';
+  CHARS.forEach((c, i) => {
+    const el = document.createElement('div'); el.className = 'card'; el.dataset.i = i;
+    el.innerHTML = `<div class="slot"></div><div class="badge"></div><div class="keyhint">${i + 1}</div><div class="nameplate">${c.name}<small>${c.tag}</small></div>`;
+    el.addEventListener('click', () => pick(i));
+    el.addEventListener('pointerenter', () => (vrms[i].scene.userData.st.hover = true));
+    el.addEventListener('pointerleave', () => (vrms[i].scene.userData.st.hover = false));
+    wrap.appendChild(el);
+    sel.cardSlots[i] = makeSlot(el.querySelector('.slot'), 'bust');
+  });
+}
+function refreshSelect() {
+  const [a, b] = sel.picks;
+  $('#cards').querySelectorAll('.card').forEach((el) => {
+    const i = +el.dataset.i; el.classList.remove('p1', 'p2', 'host');
+    const badge = el.querySelector('.badge');
+    if (a === i) { el.classList.add('p1'); badge.textContent = $('#nameP1').value || 'P1'; }
+    else if (b === i) { el.classList.add('p2'); badge.textContent = $('#nameP2').value || 'P2'; }
+    else if (sel.host === i) { el.classList.add('host'); badge.textContent = '🎤 HOST'; }
+  });
+  $('#selectMsg').textContent = a == null ? '▶ Player 1: click a character (or press 1 / 2 / 3)'
+    : b == null ? '▶ Player 2: your turn to choose!' : `The remaining contestant, ${CHARS[sel.host].name}, will host the show!`;
+  $('#startBtn').disabled = a == null || b == null;
+}
+function pick(i) {
+  if (sel.picks.includes(i) || sel.host === i) return;
+  const slot = sel.picks[0] == null ? 0 : sel.picks[1] == null ? 1 : -1;
+  if (slot < 0) return;
+  sel.picks[slot] = i; sfx.lock();
+  setMode(vrms[i], 'cheer'); setTimeout(() => setMode(vrms[i], 'idle'), 1400);
+  const c = centerOf(sel.cardSlots[i].el); confetti(c[0], c[1], 40);
+  if (sel.picks[1] != null) sel.host = [0, 1, 2].find((x) => !sel.picks.includes(x));
+  refreshSelect();
+}
+function resetPicks() { sel.picks = [null, null]; sel.host = null; refreshSelect(); }
+function showSelect() {
+  show('select'); resetPicks();
+  gameSlots.forEach((s) => (s.vrm = null));
+  CHARS.forEach((_, i) => { assign(sel.cardSlots[i], vrms[i]); setMode(vrms[i], 'idle'); vrms[i].scene.userData.st.speaking = false; });
+}
+function show(id) {
+  ['loading', 'select', 'game', 'final'].forEach((s) => $('#' + s).classList.toggle('on', s === id || (id === 'final' && s === 'game')));
+}
+
+/* ============================== GAME ============================== */
+const gameSlots = [];
+const G = { players: [], host: null, phase: 'idle', run: 0, voice: true, qStart: 0, resolveAnswers: null };
+const hostVrm = () => vrms[G.host];
+const alive = (id) => id === G.run;
+
+function say(text) { const b = $('#host-say'); b.textContent = text; b.classList.add('show'); }
+function hideSay() { $('#host-say').classList.remove('show'); }
+function speak(text) {
+  say(text);
+  const st = hostVrm().scene.userData.st, readMs = 900 + text.length * 55;
+  if (!(G.voice && 'speechSynthesis' in window)) { st.speaking = true; return sleep(readMs).then(() => { st.speaking = false; }); }
+  return new Promise((res) => {
+    const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.pitch = 1.1;
+    let done = false; const end = () => { if (done) return; done = true; st.speaking = false; res(); };
+    u.onstart = () => (st.speaking = true); u.onend = end; u.onerror = end;
+    speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(end, readMs + 6000);
+  });
+}
+
+function setupGame() {
+  const [a, b] = sel.picks;
+  G.host = sel.host;
+  G.players = [a, b].map((ci, i) => ({ idx: ci, name: ($(i ? '#nameP2' : '#nameP1').value || `Player ${i + 1}`).trim(), score: 0, answer: null, time: 0, keys: PLAYER_KEYS[i], pod: $('#pod' + i) }));
+  if (!gameSlots.length) gameSlots.push(makeSlot($('#slotHost'), 'host'), makeSlot($('#slotP1'), 'bust'), makeSlot($('#slotP2'), 'bust'));
+  assign(gameSlots[0], vrms[G.host]); assign(gameSlots[1], vrms[a]); assign(gameSlots[2], vrms[b]);
+  sel.cardSlots.forEach((s) => (s.vrm = null));
+  $('#hostName').textContent = CHARS[G.host].name;
+  G.players.forEach((p) => {
+    p.pod.querySelector('.n').textContent = p.name; p.pod.querySelector('.score').textContent = '0';
+    p.pod.querySelector('.status').classList.remove('show'); p.pod.classList.remove('locked'); setMode(vrms[p.idx], 'idle');
+  });
+  setMode(hostVrm(), 'idle'); hostVrm().scene.userData.st.speaking = false;
+  $('#answers').innerHTML = ''; $('#qcard').textContent = ''; $('#category').textContent = '—'; $('#roundPill').textContent = `Q 0/${ROUNDS}`;
+  $('#timerFill').style.transform = 'scaleX(1)';
+}
+
+async function runShow() {
+  const id = ++G.run;
+  setupGame(); show('game');
+  $('#hostMode').textContent = mocap.on ? '● LIVE MOCAP' : 'AUTO HOST';
+  sfx.start(); flash = 1; flashColor = '#ffd23f';
+  await sleep(700); if (!alive(id)) return;
+  setMode(hostVrm(), 'talk');
+  await speak(pickOne(HOST_INTRO)); if (!alive(id)) return;
+  setMode(hostVrm(), 'idle');
+  const qs = shuffle([...QUESTIONS]).slice(0, ROUNDS);
+  for (let i = 0; i < qs.length; i++) { await askQuestion(qs[i], i, id); if (!alive(id)) return; }
+  finale(id);
+}
+
+async function askQuestion([cat, text, right, wrongs], n, id) {
+  const options = shuffle([right, ...wrongs]), correct = options.indexOf(right);
+  G.players.forEach((p) => { p.answer = null; p.time = 0; p.pod.classList.remove('locked'); p.pod.querySelector('.status').classList.remove('show'); setMode(vrms[p.idx], 'think'); });
+  $('#roundPill').textContent = `Q ${n + 1}/${ROUNDS}`; $('#category').textContent = cat;
+  $('#timerFill').style.transform = 'scaleX(1)';
+  const q = $('#qcard'); q.textContent = text; q.classList.remove('pop'); void q.offsetWidth; q.classList.add('pop');
+  const ans = $('#answers'); ans.innerHTML = '';
+  options.forEach((o, i) => {
+    const b = document.createElement('div'); b.className = 'ans hidden';
+    b.innerHTML = `<span class="letter">${'ABCD'[i]}</span><span>${o}</span><span class="keys"><b>${PLAYER_KEYS[0][i].toUpperCase()}</b> / <b>${PLAYER_KEYS[1][i].toUpperCase()}</b></span><span class="chips"></span>`;
+    ans.appendChild(b);
+  });
+  G.phase = 'reading'; flash = .5; flashColor = '#2de2e6';
+  setMode(hostVrm(), 'talk');
+  const reading = speak(`Question ${n + 1}. ${cat}. ${text}`);
+  await sleep(300);
+  [...ans.children].forEach((b, i) => setTimeout(() => { b.classList.remove('hidden'); b.classList.add('in'); }, i * 140));
+  await reading; if (!alive(id)) return;
+  setMode(hostVrm(), 'idle'); hideSay();
+
+  G.phase = 'answer'; G.qStart = performance.now();
+  await new Promise((resolve) => {
+    G.resolveAnswers = resolve;
+    const iv = setInterval(() => {
+      if (!alive(id) || G.phase !== 'answer') { clearInterval(iv); resolve(); return; }
+      const left = ANSWER_TIME - (performance.now() - G.qStart) / 1000;
+      $('#timerFill').style.transform = `scaleX(${clamp(left / ANSWER_TIME, 0, 1)})`;
+      if (left <= 5 && Math.abs(left - Math.round(left)) < .03) sfx.tick();
+      if (left <= 0) { clearInterval(iv); resolve(); }
+    }, 50);
+  });
+  if (!alive(id)) return;
+
+  G.phase = 'reveal'; G.resolveAnswers = null;
+  [...ans.children].forEach((b, i) => {
+    b.classList.add(i === correct ? 'correct' : 'dim');
+    G.players.forEach((p, pi) => {
+      if (p.answer !== i) return;
+      const c = document.createElement('span'); c.className = 'chip'; c.style.background = pi ? 'var(--p2)' : 'var(--p1)'; c.textContent = p.name;
+      b.querySelector('.chips').appendChild(c);
+      if (i !== correct) { b.classList.remove('dim'); b.classList.add('wrong'); }
+    });
+  });
+  let anyRight = false;
+  G.players.forEach((p, pi) => {
+    const ok = p.answer === correct, st = p.pod.querySelector('.status'), vrm = vrms[p.idx];
+    const [cx, cy] = centerOf(p.pod.querySelector('.slot'));
+    if (ok) {
+      const pts = 100 + Math.round(clamp(ANSWER_TIME - p.time, 0, ANSWER_TIME) / ANSWER_TIME * 100);
+      p.score += pts; anyRight = true; setMode(vrm, 'cheer'); st.textContent = 'CORRECT!';
+      confetti(cx, cy, 80); ring(cx, cy, pi ? '#3fa9ff' : '#ff4d6d'); floatText(cx, cy - 60, `+${pts}`, '#34d17a');
+      p.pod.querySelector('.score').textContent = p.score;
+    } else {
+      setMode(vrm, 'sad'); st.textContent = p.answer == null ? 'TOO SLOW!' : 'WRONG!'; crossMark(cx, cy);
+    }
+    st.classList.add('show');
+  });
+  if (anyRight) { sfx.ok(); flash = 1; flashColor = '#34d17a'; } else { sfx.bad(); flash = .8; flashColor = '#ff4757'; }
+  setMode(hostVrm(), anyRight ? 'applaud' : 'talk');
+  await speak(`The answer is ${right}. ${pickOne(anyRight ? HOST_RIGHT : HOST_WRONG)}`);
+  await sleep(1200); hideSay();
+  G.players.forEach((p) => p.pod.querySelector('.status').classList.remove('show'));
+  setMode(hostVrm(), 'idle');
+}
+function floatText(x, y, text, color) {
+  const d = document.createElement('div'); d.className = 'float'; d.textContent = text; d.style.left = x + 'px'; d.style.top = y + 'px'; d.style.color = color;
+  document.body.appendChild(d); setTimeout(() => d.remove(), 1700);
+}
+
+function lockAnswer(pi, choice) {
+  const p = G.players[pi];
+  if (G.phase !== 'answer' || p.answer != null) return;
+  p.answer = choice; p.time = (performance.now() - G.qStart) / 1000;
+  p.pod.classList.add('locked'); const st = p.pod.querySelector('.status'); st.textContent = 'LOCKED IN!'; st.classList.add('show');
+  setMode(vrms[p.idx], 'lock'); sfx.lock();
+  if (G.players.every((x) => x.answer != null)) G.resolveAnswers?.();
+}
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT') return;
+  const k = e.key.toLowerCase();
+  if ($('#select').classList.contains('on')) { if (['1', '2', '3'].includes(k)) pick(+k - 1); return; }
+  if (k === 'm') { toggleMirror(); return; }
+  G.players.forEach((p, pi) => { const c = p.keys.indexOf(k); if (c >= 0) lockAnswer(pi, c); });
+});
+
+function finale(id) {
+  G.phase = 'final'; hideSay();
+  const [a, b] = G.players, tie = a.score === b.score, win = a.score > b.score ? 0 : 1;
+  $('#finalTitle').textContent = tie ? 'It’s a tie!' : `${G.players[win].name} wins!`;
+  $('#finalP1').textContent = `${a.name}: ${a.score}`; $('#finalP2').textContent = `${b.name}: ${b.score}`;
+  G.players.forEach((p, i) => setMode(vrms[p.idx], tie || i === win ? 'cheer' : 'sad'));
+  setMode(hostVrm(), 'applaud');
+  show('final'); sfx.ok(); flash = 1; flashColor = '#ffd23f';
+  for (let i = 0; i < 6; i++) setTimeout(() => alive(id) && confetti(innerWidth * (.15 + Math.random() * .7), innerHeight * .6, 60), i * 350);
+  speak(tie ? 'What a nail-biter! It’s a tie!' : `Congratulations ${G.players[win].name}! What a game!`);
+}
+
+function toggleVoice() { G.voice = !G.voice; $('#voiceBtn').textContent = `🔊 Voice: ${G.voice ? 'ON' : 'OFF'}`; if (!G.voice) speechSynthesis?.cancel(); }
+function toggleMirror() { mocap.mirror = !mocap.mirror; $('#mirrorBtn').textContent = `↔ Mirror: ${mocap.mirror ? 'ON' : 'OFF'}`; }
+$('#voiceBtn').onclick = toggleVoice; $('#mirrorBtn').onclick = toggleMirror;
+$('#resetPick').onclick = resetPicks;
+$('#nameP1').oninput = $('#nameP2').oninput = refreshSelect;
+$('#startBtn').onclick = async () => {
+  const btn = $('#startBtn');
+  if ($('#useCam').checked) {
+    btn.disabled = true; btn.textContent = 'Starting camera…';
+    await startMocap();
+    btn.textContent = 'Start Show!'; btn.disabled = false;
+    if (mocap.on && G.voice) toggleVoice(); // a live human host reads the questions
+  } else if (mocap.on) stopMocap();
+  runShow();
+};
+$('#againBtn').onclick = () => { G.run++; speechSynthesis?.cancel(); G.phase = 'idle'; hideSay(); showSelect(); };
+
+/* ============================== MAIN LOOP ============================== */
+const clock = new THREE.Clock();
+function updateVrm(vrm, dt, isHost) {
+  const st = vrm.scene.userData.st; st.t += dt;
+  let T = procTargets(st, st.hover && st.mode === 'idle' ? 'wave' : st.mode);
+  eul.set(T.head[0], T.head[1], T.head[2], 'YXZ');
+  let headQ = new Q().setFromEuler(eul);
+  const ex = { ...T.exp };
+  st.blinkAt -= dt; if (st.blinkAt < 0) { st.blinkT = .16; st.blinkAt = 2 + Math.random() * 4; }
+  if (st.blinkT > 0) { st.blinkT -= dt; ex.blink = 1; }
+  if (isHost && mocap.on) {
+    const now = performance.now();
+    if (now - mocap.poseAt < 800) { const m = mocapArms(st); T.L = m.L; T.R = m.R; }
+    if (now - mocap.faceAt < 800) { headQ = mocapHead() || headQ; Object.assign(ex, mocapExp()); }
+  }
+  applyArms(vrm, st, T, dt);
+  applyHead(vrm, st, headQ, dt);
+  vrm.rig.chest.rotation.x = Math.sin(st.t * 1.6) * .012; // breathing
+  applyExpressions(vrm, st, ex, dt);
+  vrm.update(dt);
+}
+function render() {
+  requestAnimationFrame(render);
+  const dt = Math.min(clock.getDelta(), .05);
+  mocapPoll();
+  drawBackground(clock.elapsedTime); drawFX();
+  const host = gameSlots[0]?.vrm;
+  for (const vrm of vrms) if (vrm) updateVrm(vrm, dt, vrm === host && $('#game').classList.contains('on'));
+  renderer.clear();
+  renderer.setScissorTest(true);
+  for (const s of slots) {
+    if (!s.vrm || !s.el.getClientRects().length) continue;
+    const r = s.el.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) continue;
+    frameSlot(s, r.width, r.height);
+    const y = innerHeight - r.bottom;
+    renderer.setViewport(r.left, y, r.width, r.height); renderer.setScissor(r.left, y, r.width, r.height);
+    renderer.render(s.scene, s.camera);
+  }
+  renderer.setScissorTest(false);
+}
+
+(async () => {
+  try {
+    await loadAll();
+    buildCards(); showSelect();
+    CHARS.forEach((_, i) => setTimeout(() => { setMode(vrms[i], 'wave'); setTimeout(() => setMode(vrms[i], 'idle'), 1500); }, 300 + i * 350));
+  } catch (e) {
+    console.error(e);
+    $('#loadText').textContent = 'Could not load characters: ' + (e.message || e) + ' (serve this folder over http, e.g. python3 -m http.server)';
+  }
+})();
+render();
+window.__quiz = { vrms, G, mocap, sel, pick, lockAnswer };
+</script>
+</body>
+</html>
